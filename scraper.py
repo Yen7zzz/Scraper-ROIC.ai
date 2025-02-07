@@ -900,7 +900,7 @@ if __name__ == '__main__':
     template_path = r'C:\tmp\stock_template'
 
     # 股票代碼(可自行任意輸入，只需更改您要查詢的股票代碼即可)
-    stocks = ['MSFT', 'DELL', 'NVDA', 'META', 'PLTR', 'AAPL', 'MMM', 'TSLA', 'AMAT', 'GOOG']
+    stocks = ['MSFT', 'DELL', 'NVDA', 'META', 'PLTR', 'AAPL', 'MMM', 'TSLA', 'AMAT', 'GOOG', 'AMD', 'ADBE', 'SBUX', 'LOW', 'V', 'MA', 'MU', 'ORCL']
     # stocks = ['MSFT', 'DELL', 'NVDA', 'META', 'PLTR']
     # stocks = ['AAPL', 'MMM', 'TSLA', 'AMAT', 'GOOG']
     # stocks = ['MSFT', 'MU', 'MMM', 'GOOGL', 'C', 'BRK-B', 'TSM']
