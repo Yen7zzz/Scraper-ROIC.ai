@@ -13,7 +13,6 @@ import yfinance as yf
 import aiohttp
 import json
 
-
 class StockScraper:
     def __init__(self, stocks, template_path, headless=True, max_concurrent=3):
         """
@@ -158,8 +157,7 @@ class StockScraper:
                 await page.goto(URL, wait_until='load', timeout=50000)
                 # await page.wait_for_selector('table[style="width: 1199.8px;"]', timeout=50000)
                 # await page.wait_for_selector('table.w-full.caption-bottom.text-sm.table-fixed', timeout=100000)
-                if await page.query_selector(
-                        'div.rounded-lg.bg-card.text-card-foreground.shadow-sm.mx-auto.flex.w-\\[500px\\].flex-col.items-center.border.drop-shadow-lg'):
+                if await page.query_selector('div.rounded-lg.bg-card.text-card-foreground.shadow-sm.mx-auto.flex.w-\\[500px\\].flex-col.items-center.border.drop-shadow-lg'):
                     return f'{stock}是非美國企業，此頁面須付費！'
                 else:
                     await page.wait_for_selector('table.w-full.caption-bottom.text-sm.table-fixed', timeout=100000)
@@ -320,14 +318,14 @@ class StockScraper:
                 l_eps_growth5y = []
                 try:
                     EPS_Growth_Rate_3_Year = \
-                        dic['symbol']['keyratio']['keyratio']['annuals']['3-Year EPS Growth Rate %'][
-                            -1]
+                    dic['symbol']['keyratio']['keyratio']['annuals']['3-Year EPS Growth Rate %'][
+                        -1]
                     EPS_Growth_Rate_5_Year = \
-                        dic['symbol']['keyratio']['keyratio']['annuals']['5-Year EPS Growth Rate %'][
-                            -1]
+                    dic['symbol']['keyratio']['keyratio']['annuals']['5-Year EPS Growth Rate %'][
+                        -1]
                     EPS_Growth_Rate_10_Year = \
-                        dic['symbol']['keyratio']['keyratio']['annuals']['10-Year EPS Growth Rate %'][
-                            -1]
+                    dic['symbol']['keyratio']['keyratio']['annuals']['10-Year EPS Growth Rate %'][
+                        -1]
 
                     EPS_Growth_Rate_3_Year = 0 if EPS_Growth_Rate_3_Year == '-' else EPS_Growth_Rate_3_Year
                     EPS_Growth_Rate_5_Year = 0 if EPS_Growth_Rate_5_Year == '-' else EPS_Growth_Rate_5_Year
@@ -340,8 +338,7 @@ class StockScraper:
                     return f"EPS_Growth_Rate的dictionary鍵錯誤：{stock}"
 
                 # 選擇成長率：如果最小值大於 0，則取最小值，否則取最大值
-                selected_growth_rate = min(l_eps_growth5y) / 100 if min(l_eps_growth5y) > 0 else max(
-                    l_eps_growth5y) / 100
+                selected_growth_rate = min(l_eps_growth5y)/100 if min(l_eps_growth5y) > 0 else max(l_eps_growth5y)/100
                 # print(selected_growth_rate)
                 # 寫入 Excel
                 try:
@@ -356,7 +353,6 @@ class StockScraper:
                     return f"找不到此檔案，請確認路徑！您目前提供的路徑如下：{file_path}"
                 except PermissionError:
                     return f"存檔失敗：請先關閉Excel再執行程式！請先關閉Excel檔案路徑：{file_path}"
-
 
 class StockProcess:
     def __init__(self, template_path):
@@ -700,69 +696,49 @@ class StockProcess:
         except PermissionError:
             return f"存檔失敗：請先關閉Excel再執行程式！請先關閉Excel檔案路徑：{file_path}"
 
-
 class StockManager:
-    def __init__(self, scraper, processor, template_path):
+    def __init__(self, scraper, processor, template_path, max_concurrent=1, delay=1):
         self.scraper = scraper
         self.processor = processor
         self.template_path = template_path
-        # 抓取stock代碼pattern
         self.pattern1 = r'^[a-zA-Z\-\.]{1,5}'
-        # 抓取非美國stock代碼pattern
         self.pattern2 = r'是非美國企業，此頁面須付費！$'
-        # 抓取FileNotFound以及path
-        self.pattern3 = fr'找不到此檔案，請確認路徑！您目前提供的路徑如下：(.*)'
-        # 抓取FilePermissionError以及path
-        self.pattern4 = fr'存檔失敗：請先關閉Excel再執行程式！請先關閉Excel檔案路徑：(.*)'
+        self.pattern3 = fr'找不到此檔案，請確認路徑！您目前提供的路徑如下：{self.template_path}'
+        self.semaphore = asyncio.Semaphore(max_concurrent)
+        self.delay = delay
 
     async def process_summary(self, stocks):
         raw_df_summary = await self.scraper.run_summary()
-        tasks = [self.processor.process_df_summary(raw_df_summary=raw_df_summary[index], stock=stock) for index, stock
-                 in enumerate(stocks)]
+        tasks = [self.processor.process_df_summary(raw_df_summary=raw_df_summary[index], stock=stock) for index, stock in enumerate(stocks)]
         results = await asyncio.gather(*tasks)  # 並行處理所有股票的任務
         # print(results)
-        match_list, file_not_found_list, file_permission_list = [], [], []
+        match_list = []
         for result in results:
             match1 = re.match(self.pattern1, result)
-            file_not_found_match = re.match(self.pattern3, result)
-            file_permission_match = re.match(self.pattern4, result)
             if match1:
                 match_list.append(match1.group())
-            elif file_not_found_match:
-                file_not_found_list.append(file_not_found_match.group(1))
-            elif file_permission_match:
-                file_permission_list.append(file_permission_match.group(1))
 
         if match_list:
             print(f"{', '.join([re.match(self.pattern1, m).group() for m in match_list])}的Summary成功寫入及儲存成功")
-        if file_not_found_list:
-            file_path = '\n'.join(file_not_found_list)
-            print(f"找不到此檔案，請確認路徑！您目前提供的路徑如下：\n{file_path}'")
-        if file_permission_list:
-            file_path = '\n'.join(file_permission_list)
-            print(f"""存檔失敗：請先關閉Excel再執行程式！請先關閉Excel檔案路徑：\n{file_path}""")
 
     async def process_financial(self, stocks):
         raw_df_financial = await self.scraper.run_financial()
         # print(raw_df_financial)
-        tasks = [self.processor.process_df_financial(raw_df_financial[index], stock=stock) for index, stock in
-                 enumerate(stocks)]
+        tasks = [self.processor.process_df_financial(raw_df_financial[index], stock=stock) for index, stock in enumerate(stocks)]
         results = await asyncio.gather(*tasks)  # 並行處理所有股票的任務
         # print(results)
-        match_list, unmatch_list_1, file_not_found_list, file_permission_list = [], [], [], []
+        match_list, unmatch_list_1, unmatch_list_2 = [], [], []
         for index, result in enumerate(results):
+            pattern3 = f'{self.pattern3}/STOCK_{stocks[index]}.xlsx'
             match1 = re.match(self.pattern1, result)
             match2 = re.search(self.pattern2, result)
-            file_not_found_match = re.search(self.pattern3, result)
-            file_permission_match = re.match(self.pattern4, result)
+            match3 = re.match(pattern3, result)
             if match1 and not match2:
                 match_list.append(match1.group())
             elif match2:
                 unmatch_list_1.append(result)
-            elif file_not_found_match:
-                file_not_found_list.append(file_not_found_match.group(1))
-            elif file_permission_match:
-                file_permission_list.append(file_permission_match.group(1))
+            elif match3:
+                unmatch_list_2.append(result)
 
         # print(match_list)
         # print(unmatch_list_1)
@@ -770,150 +746,88 @@ class StockManager:
         if match_list:
             print(f"{', '.join([re.match(self.pattern1, m).group() for m in match_list])}的Financial成功寫入及儲存成功")
         if unmatch_list_1:
-            print(
-                f"{', '.join([re.match(self.pattern1, u).group() for u in unmatch_list_1])}是非美國企業，此頁面須付費！")
-        if file_not_found_list:
-            file_path = '\n'.join(file_not_found_list)
-            print(f"找不到此檔案，請確認路徑！您目前提供的路徑如下：\n{file_path}'")
-        if file_permission_list:
-            file_path = '\n'.join(file_permission_list)
-            print(f'存檔失敗：請先關閉Excel再執行程式！請先關閉Excel檔案路徑：\n{file_path}')
+            print(f"{', '.join([re.match(self.pattern1, u).group() for u in unmatch_list_1])}是非美國企業，此頁面須付費！")
+        if unmatch_list_2:
+            print(f"{', '.join([re.match(self.pattern1, u)for u in unmatch_list_2])}找不到此檔案，請確認路徑！您目前提供的路徑如下：c:/tmps/stock_template/STOCK_NVDA.xlsx")
+
 
     async def process_ratios(self, stocks):
         raw_df_ratios = await self.scraper.run_ratios()
-        tasks = [self.processor.process_df_ratios(raw_df_ratios=raw_df_ratios[index], stock=stock) for index, stock in
-                 enumerate(stocks)]
+        tasks = [self.processor.process_df_ratios(raw_df_ratios=raw_df_ratios[index], stock=stock) for index, stock in enumerate(stocks)]
         results = await asyncio.gather(*tasks)  # 並行處理所有股票的任務
-        match_list, unmatch_list, file_not_found_list, file_permission_list = [], [], [], []
+        match_list, unmatch_list = [], []
         for result in results:
             match1 = re.match(self.pattern1, result)
             match2 = re.search(self.pattern2, result)
-            file_not_found_match = re.search(self.pattern3, result)
-            file_permission_match = re.match(self.pattern4, result)
             if match1 and not match2:
                 match_list.append(match1.group())
-            elif match2:
+            else:
                 unmatch_list.append(result)
-            elif file_not_found_match:
-                file_not_found_list.append(file_not_found_match.group(1))
-            elif file_permission_match:
-                file_permission_list.append(file_permission_match.group(1))
 
         if match_list:
             print(f"{', '.join([re.match(self.pattern1, m).group() for m in match_list])}的Ratios成功寫入及儲存成功")
         if unmatch_list:
             print(f"{', '.join([re.match(self.pattern1, u).group() for u in unmatch_list])}是非美國企業，此頁面須付費！")
-        if file_not_found_list:
-            file_path = '\n'.join(file_not_found_list)
-            print(f"找不到此檔案，請確認路徑！您目前提供的路徑如下：\n{file_path}'")
-        if file_permission_list:
-            file_path = '\n'.join(file_permission_list)
-            print(f'存檔失敗：請先關閉Excel再執行程式！請先關閉Excel檔案路徑：\n{file_path}')
 
     async def process_EPS_PE_MarketCap(self, stocks):
         raw_df_EPS_PE_MarketCap = await self.scraper.run_EPS_PE_MarketCap()
-        tasks = [
-            self.processor.EPS_PE_MarketCap_data_write_to_excel(EPS_PE_MarketCap_content=raw_df_EPS_PE_MarketCap[index],
-                                                                stock=stock) for index, stock in enumerate(stocks)]
+        tasks = [self.processor.EPS_PE_MarketCap_data_write_to_excel(EPS_PE_MarketCap_content=raw_df_EPS_PE_MarketCap[index], stock=stock) for index, stock in enumerate(stocks)]
         results = await asyncio.gather(*tasks)  # 並行處理所有股票的任務
-        match_list, file_not_found_list, file_permission_list = [], [], []
+        match_list = []
 
         for result in results:
             match1 = re.match(self.pattern1, result)
-            file_not_found_match = re.search(self.pattern3, result)
-            file_permission_match = re.match(self.pattern4, result)
             if match1:
                 match_list.append(match1.group())
-            elif file_not_found_match:
-                file_not_found_list.append(file_not_found_match.group(1))
-            elif file_permission_match:
-                file_permission_list.append(file_permission_match.group(1))
 
         if match_list:
-            print(
-                f"{', '.join([re.match(self.pattern1, m).group() for m in match_list])}的EPS_PE_MarketCap成功寫入及儲存成功")
-        if file_not_found_list:
-            file_path = '\n'.join(file_not_found_list)
-            print(f"找不到此檔案，請確認路徑！您目前提供的路徑如下：\n{file_path}'")
-        if file_permission_list:
-            file_path = '\n'.join(file_permission_list)
-            print(f'存檔失敗：請先關閉Excel再執行程式！請先關閉Excel檔案路徑：\n{file_path}')
+            print(f"{', '.join([re.match(self.pattern1, m).group() for m in match_list])}的EPS_PE_MarketCap成功寫入及儲存成功")
 
     async def process_others_data(self, stocks):
-        l_task = []
-        for stock in stocks:
-            await asyncio.sleep(random.uniform(1, 3))  # 模擬人工操作
-            task = asyncio.create_task(self.processor.others_data(stock))
-            l_task.append(task)
-            
-        # tasks = [self.processor.others_data(stock) for stock in stocks]
-        results = await asyncio.gather(*l_task)  # 並行處理所有股票的任務
-        # print(results)
-        match_list, file_not_found_list, file_permission_list = [], [], []
+        async with self.semaphore:
+            await asyncio.sleep(self.delay)
+            tasks = [self.processor.others_data(stock) for stock in stocks]
+            results = await asyncio.gather(*tasks)  # 並行處理所有股票的任務
+            match_list = []
 
-        for result in results:
-            match1 = re.match(self.pattern1, result)
-            file_not_found_match = re.search(self.pattern3, result)
-            file_permission_match = re.match(self.pattern4, result)
-            if match1:
-                match_list.append(match1.group())
-            elif file_not_found_match:
-                file_not_found_list.append(file_not_found_match.group(1))
-            elif file_permission_match:
-                file_permission_list.append(file_permission_match.group(1))
+            for result in results:
+                match1 = re.match(self.pattern1, result)
+                if match1:
+                    match_list.append(match1.group())
 
-        if match_list:
-            print(f"{', '.join([re.match(self.pattern1, m).group() for m in match_list])}的其他資料成功寫入及儲存成功")
-        if file_not_found_list:
-            file_path = '\n'.join(file_not_found_list)
-            print(f"找不到此檔案，請確認路徑！您目前提供的路徑如下：\n{file_path}'")
-        if file_permission_list:
-            file_path = '\n'.join(file_permission_list)
-            print(f'存檔失敗：請先關閉Excel再執行程式！請先關閉Excel檔案路徑：\n{file_path}')
+            if match_list:
+                print(f"{', '.join([re.match(self.pattern1, m).group() for m in match_list])}的其他資料成功寫入及儲存成功")
 
     async def process_EPS_Growth_Rate(self, stocks):
         tasks = [self.scraper.EPS_Growth_Rate_and_write_to_excel(stock) for stock in stocks]
         results = await asyncio.gather(*tasks)  # 並行處理所有股票的任務
-        match_list, file_not_found_list, file_permission_list = [], [], []
+        match_list = []
 
         for result in results:
             match1 = re.match(self.pattern1, result)
-            file_not_found_match = re.search(self.pattern3, result)
-            file_permission_match = re.match(self.pattern4, result)
             if match1:
                 match_list.append(match1.group())
-            elif file_not_found_match:
-                file_not_found_list.append(file_not_found_match.group(1))
-            elif file_permission_match:
-                file_permission_list.append(file_permission_match.group(1))
 
         if match_list:
             print(f"{', '.join([re.match(self.pattern1, m).group() for m in match_list])}的EPS成長率成功寫入及儲存成功")
-        if file_not_found_list:
-            file_path = '\n'.join(file_not_found_list)
-            print(f"找不到此檔案，請確認路徑！您目前提供的路徑如下：\n{file_path}'")
-        if file_permission_list:
-            file_path = '\n'.join(file_permission_list)
-            print(f'存檔失敗：請先關閉Excel再執行程式！請先關閉Excel檔案路徑：\n{file_path}')
 
 if __name__ == '__main__':
     start = time.time()
 
     # 注意事項
-    print(
-        f'###注意事項###\n股票代碼請勿輸入非美國本土企業！！！\nROIC網站在Financial及Ratios頁面時，查看國外企業時需額外付費才能觀看！！！\n如"ASML、"TSM"等等...非美國本土企業！！！')
+    print(f'###注意事項###\n股票代碼請勿輸入非美國本土企業！！！\nROIC網站在Financial及Ratios頁面時，查看國外企業時需額外付費才能觀看！！！\n如"ASML、"TSM"等等...非美國本土企業！！！')
     print()
     # Excel檔案路徑
-    template_path = r'C:\tmp\stock_template'
+    template_path = 'c:/tmp/stock_template'
 
     # 股票代碼(可自行任意輸入，只需更改您要查詢的股票代碼即可)
-    stocks = ['MSFT', 'DELL', 'NVDA', 'META', 'PLTR', 'AAPL', 'MMM', 'TSLA', 'AMAT', 'GOOG', 'AMD', 'ADBE', 'SBUX', 'LOW', 'V', 'MA', 'MU', 'ORCL']
+    stocks = ['MSFT', 'DELL', 'NVDA', 'META', 'PLTR', 'AAPL', 'MMM', 'TSLA', 'AMAT', 'GOOG']
     # stocks = ['MSFT', 'DELL', 'NVDA', 'META', 'PLTR']
     # stocks = ['AAPL', 'MMM', 'TSLA', 'AMAT', 'GOOG']
     # stocks = ['MSFT', 'MU', 'MMM', 'GOOGL', 'C', 'BRK-B', 'TSM']
     # stocks = ['MSFT', 'MU', 'MMM', 'TSM', 'ASML']
     # stocks = ['TSM', 'ASML']
-    # stocks = ['NVDA', 'META']
+    # stocks = ['NVDA','AMD','MSFT','TSLA','META']
     scraper = StockScraper(stocks=stocks, template_path=template_path)
 
     # 創建物件
@@ -934,6 +848,12 @@ if __name__ == '__main__':
     print('-' * 100)
     asyncio.run(Manager.process_EPS_Growth_Rate(stocks))
 
+    # print(res_summary)
+    # print(res_financial)
+    # print(res_ratios)
+    # print(res_EPS_PE_MarketCap)
+    # print(res_process_others_data)
+    # print(res_EPS_Growth_Rate_and_write_to_excel)
+
     # 計時
-    print()
     print(f'抓取ROIC及寫入至Excel所花費時間：{time.time() - start:.2f}(單位：秒)')
