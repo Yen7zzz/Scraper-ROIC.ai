@@ -575,6 +575,104 @@ class StockProcess:
         else:
             return excel_base64, '無原始資料'
 
+    async def EPS_PE_MarketCap_data_write_to_excel(self, EPS_PE_MarketCap_content, stock, excel_base64):
+        """將 EPS_PE_MarketCap 數據寫入 Excel base64"""
+        try:
+            excel_binary = base64.b64decode(excel_base64)
+            excel_buffer = io.BytesIO(excel_binary)
+            wb = load_workbook(excel_buffer)
+            ws = wb.worksheets[0]
+
+            # 處理資料
+            for data in EPS_PE_MarketCap_content.get(stock, {}):
+                start_cell = "EN1"
+                start_row = int(start_cell[2:])  # 提取行號，例如 "1"
+
+                for i, (key, value) in enumerate(data.items()):
+                    row = start_row + i  # 從起始行開始逐行寫入
+                    ws[f"EN{row}"] = key  # 寫入鍵到 EN 列
+                    ws[f"EO{row}"] = value  # 寫入值到 EO 列
+
+            # 儲存到 base64
+            output_buffer = io.BytesIO()
+            wb.save(output_buffer)
+            output_buffer.seek(0)
+            modified_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
+
+            return modified_base64, f'{stock}的EPS_PE_MarketCap成功寫入及儲存成功'
+
+        except Exception as e:
+            return excel_base64, f"處理 EPS_PE_MarketCap 時發生錯誤: {e}"
+
+    async def process_df_ratios(self, raw_df_ratios, stock, excel_base64):
+        """處理ratios數據並寫入Excel base64"""
+        if raw_df_ratios:
+            try:
+                excel_binary = base64.b64decode(excel_base64)
+                excel_buffer = io.BytesIO(excel_binary)
+                wb = load_workbook(excel_buffer)
+                ws = wb.worksheets[1]  # 假設需要寫入的工作表是第二個
+
+                # 清除舊資料
+                for row in ws.iter_rows(min_row=1, min_col=1, max_row=100, max_col=25):
+                    for cell in row:
+                        cell.value = None
+
+                if raw_df_ratios.get(stock) == [f'{stock}是非美國企業，此頁面須付費！']:
+                    return excel_base64, f'{stock}是非美國企業，此頁面須付費！'
+                else:
+                    d_1_raw_df_ratios = [y for x in raw_df_ratios.get(stock, []) for y in x]
+
+                    for df_amount, df in enumerate(d_1_raw_df_ratios):
+                        df_column_list = df.columns.tolist()
+
+                        # 篩選需要的年份
+                        years_list = []
+                        pattern = r'\d{4}\sY'
+                        for years in df_column_list:
+                            if re.match(pattern, years):
+                                years_list.append(int(years.split()[0]))
+
+                        if years_list:
+                            end_year = max(years_list)
+                            start_year = end_year - 10
+                            drop_column = [
+                                x for x in df_column_list
+                                if not (re.match(pattern, x) and start_year <= int(x.split()[0]) <= end_year)
+                            ]
+                            drop_column.pop(0)
+                            df = df.drop(columns=drop_column)
+
+                            # 資料轉型為數值型
+                            years_data = df.columns[1:]
+                            df[years_data] = df[years_data].apply(pd.to_numeric, errors='coerce')
+
+                            # 將表格資料寫入指定位置並調整格式
+                            start_row, start_col = 1, 1
+                            for r_idx, row in enumerate(dataframe_to_rows(df, index=False, header=True),
+                                                        start=start_row):
+                                for c_idx, value in enumerate(row, start=start_col):
+                                    cell = ws.cell(row=r_idx, column=c_idx, value=value)
+                                    cell.font = Font(size=12, bold=(r_idx == start_row))
+
+                            # 自動調整欄寬
+                            for col in ws.columns:
+                                max_length = max(len(str(cell.value or '')) for cell in col)
+                                ws.column_dimensions[col[0].column_letter].width = max_length + 2
+
+                # 儲存到base64
+                output_buffer = io.BytesIO()
+                wb.save(output_buffer)
+                output_buffer.seek(0)
+                modified_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
+
+                return modified_base64, f"{stock}的Ratios成功寫入"
+
+            except Exception as e:
+                return excel_base64, f"處理Ratios資料時發生錯誤: {e}"
+        else:
+            return excel_base64, '無原始資料'
+
     async def _rate_limit(self, api_key="yfinance"):
         """實施速率限制"""
         current_time = time.time()
@@ -733,16 +831,22 @@ class StockManager:
         raw_df_ratios = await self.scraper.run_ratios()
         for index, stock in enumerate(stocks):
             if stock in self.excel_files:
-                # 這裡需要實作類似的邏輯，由於篇幅限制，簡化處理
-                print(f"✅ {stock}的Ratios處理完成")
+                modified_base64, message = await self.processor.process_df_ratios(
+                    raw_df_ratios[index], stock, self.excel_files[stock]
+                )
+                self.excel_files[stock] = modified_base64
+                print(f"✅ {message}")
 
     async def process_EPS_PE_MarketCap(self, stocks):
         """處理EPS/PE/MarketCap數據"""
         raw_df_EPS_PE_MarketCap = await self.scraper.run_EPS_PE_MarketCap()
         for index, stock in enumerate(stocks):
             if stock in self.excel_files:
-                # 這裡需要實作類似的邏輯，由於篇幅限制，簡化處理
-                print(f"✅ {stock}的EPS_PE_MarketCap處理完成")
+                modified_base64, message = await self.processor.EPS_PE_MarketCap_data_write_to_excel(
+                    raw_df_EPS_PE_MarketCap[index], stock, self.excel_files[stock]
+                )
+                self.excel_files[stock] = modified_base64
+                print(f"✅ {message}")
 
     async def process_others_data(self, stocks):
         """處理其他數據"""
