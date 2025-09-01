@@ -797,20 +797,16 @@ class StockValidator:
     def validate_single_stock(self, stock):
         """驗證單一股票代碼"""
         try:
-            # 使用 yfinance 快速檢查股票是否存在
+            # 使用 yfinance 獲取歷史數據來驗證股票
             ticker = yf.Ticker(stock)
-            info = ticker.info
 
-            # 檢查是否有基本資訊
-            if 'symbol' in info and info.get('symbol'):
-                # 進一步檢查是否有股價資訊
-                hist = ticker.history(period="1d")
-                if not hist.empty:
-                    return True, f"✅ {stock}: 有效股票代碼"
-                else:
-                    return False, f"❌ {stock}: 無法取得股價資訊"
+            # 先嘗試獲取基本歷史數據，避免使用 .info 屬性
+            hist = ticker.history(period="5d")
+
+            if not hist.empty:
+                return True, f"✅ {stock}: 有效股票代碼"
             else:
-                return False, f"❌ {stock}: 無效股票代碼"
+                return False, f"❌ {stock}: 無法獲得股價資訊"
 
         except Exception as e:
             return False, f"❌ {stock}: 驗證失敗 - {str(e)}"
