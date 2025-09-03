@@ -469,11 +469,34 @@ class StockProcess:
                         years_data = df.columns[1:]
                         df[years_data] = df[years_data].apply(pd.to_numeric, errors='coerce')
 
-                        # 將資料寫入 Excel
-                        start_row, start_column = 1, 1
-                        for r_idx, row in enumerate(dataframe_to_rows(df, index=False, header=True), start=start_row):
-                            for c_idx, value in enumerate(row, start=start_column):
-                                cell = ws.cell(row=r_idx, column=c_idx, value=value)
+                        # *** 關鍵修改：反轉年份欄位的順序 ***
+                        # 保留第一欄（通常是項目名稱），但反轉年份欄位
+                        first_col = df.columns[0]  # 第一欄
+                        year_cols = df.columns[1:]  # 年份欄位
+                        reversed_year_cols = year_cols[::-1]  # 反轉年份欄位順序
+
+                        # 重新組合欄位順序：第一欄 + 反轉的年份欄位
+                        new_column_order = [first_col] + list(reversed_year_cols)
+                        df_reordered = df[new_column_order]
+
+                        # 將資料寫入 Excel，並設置欄位格式
+                        start_row = 1
+
+                        for r_idx, row in enumerate(dataframe_to_rows(df_reordered, index=False, header=True),
+                                                    start=start_row):
+                            row_data = list(row)
+
+                            # 第一欄（項目名稱）寫入 A 欄
+                            cell = ws.cell(row=r_idx, column=1, value=row_data[0])
+                            cell.font = Font(size=12, bold=(r_idx == start_row))
+
+                            # 年份數據從右邊開始寫入（從 L 欄開始往左）
+                            year_data = row_data[1:]  # 除了第一欄以外的年份數據
+
+                            # L欄是第12欄，從L欄開始往左寫
+                            for year_idx, value in enumerate(year_data):
+                                column_position = 12 - year_idx  # L=12, K=11, J=10...
+                                cell = ws.cell(row=r_idx, column=column_position, value=value)
                                 cell.font = Font(size=12, bold=(r_idx == start_row))
 
                         # 自動調整欄寬
@@ -549,12 +572,34 @@ class StockProcess:
                             years_data = df.columns[1:]
                             df[years_data] = df[years_data].apply(pd.to_numeric, errors='coerce')
 
+                            # *** 關鍵修改：反轉年份欄位的順序 ***
+                            first_col = df.columns[0]  # 第一欄
+                            year_cols = df.columns[1:]  # 年份欄位
+                            reversed_year_cols = year_cols[::-1]  # 反轉年份欄位順序
+
+                            # 重新組合欄位順序：第一欄 + 反轉的年份欄位
+                            new_column_order = [first_col] + list(reversed_year_cols)
+                            df_reordered = df[new_column_order]
+
                             # 將表格資料寫入指定位置並調整格式
-                            start_row, start_col = starting_cell[df_amount][1], starting_cell[df_amount][2]
-                            for r_idx, row in enumerate(dataframe_to_rows(df, index=False, header=True),
+                            start_row = starting_cell[df_amount][1]
+                            start_col = starting_cell[df_amount][2]
+
+                            for r_idx, row in enumerate(dataframe_to_rows(df_reordered, index=False, header=True),
                                                         start=start_row):
-                                for c_idx, value in enumerate(row, start=start_col):
-                                    cell = ws.cell(row=r_idx, column=c_idx, value=value)
+                                row_data = list(row)
+
+                                # 第一欄（項目名稱）寫入起始欄位
+                                cell = ws.cell(row=r_idx, column=start_col, value=row_data[0])
+                                cell.font = Font(size=12, bold=(r_idx == start_row))
+
+                                # 年份數據從右邊開始寫入（從起始欄位+11開始往左）
+                                year_data = row_data[1:]  # 除了第一欄以外的年份數據
+
+                                # 從起始欄位+11開始往左寫（假設有12欄的空間）
+                                for year_idx, value in enumerate(year_data):
+                                    column_position = (start_col + 11) - year_idx  # 從右邊往左寫
+                                    cell = ws.cell(row=r_idx, column=column_position, value=value)
                                     cell.font = Font(size=12, bold=(r_idx == start_row))
 
                             # 自動調整欄寬
@@ -575,35 +620,6 @@ class StockProcess:
         else:
             return excel_base64, '無原始資料'
 
-    async def EPS_PE_MarketCap_data_write_to_excel(self, EPS_PE_MarketCap_content, stock, excel_base64):
-        """將 EPS_PE_MarketCap 數據寫入 Excel base64"""
-        try:
-            excel_binary = base64.b64decode(excel_base64)
-            excel_buffer = io.BytesIO(excel_binary)
-            wb = load_workbook(excel_buffer)
-            ws = wb.worksheets[0]
-
-            # 處理資料
-            for data in EPS_PE_MarketCap_content.get(stock, {}):
-                start_cell = "EN1"
-                start_row = int(start_cell[2:])  # 提取行號，例如 "1"
-
-                for i, (key, value) in enumerate(data.items()):
-                    row = start_row + i  # 從起始行開始逐行寫入
-                    ws[f"EN{row}"] = key  # 寫入鍵到 EN 列
-                    ws[f"EO{row}"] = value  # 寫入值到 EO 列
-
-            # 儲存到 base64
-            output_buffer = io.BytesIO()
-            wb.save(output_buffer)
-            output_buffer.seek(0)
-            modified_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
-
-            return modified_base64, f'{stock}的EPS_PE_MarketCap成功寫入及儲存成功'
-
-        except Exception as e:
-            return excel_base64, f"處理 EPS_PE_MarketCap 時發生錯誤: {e}"
-
     async def process_df_ratios(self, raw_df_ratios, stock, excel_base64):
         """處理ratios數據並寫入Excel base64"""
         if raw_df_ratios:
@@ -611,10 +627,36 @@ class StockProcess:
                 excel_binary = base64.b64decode(excel_base64)
                 excel_buffer = io.BytesIO(excel_binary)
                 wb = load_workbook(excel_buffer)
-                ws = wb.worksheets[1]  # 假設需要寫入的工作表是第二個
+                ws = wb.worksheets[0]  # 使用第一個工作表
 
-                # 清除舊資料
-                for row in ws.iter_rows(min_row=1, min_col=1, max_row=100, max_col=25):
+                # 定義各類財務數據的起始位置（對應A.py的7個類別）
+                starting_cell = [
+                    ('Profitability', 1, 53), ('Credit', 1, 66),
+                    ('Liquidity', 1, 79), ('Working Capital', 1, 92),
+                    ('Enterprise Value', 1, 105), ('Multiples', 1, 118),
+                    ('Per Share Data Items', 1, 131)
+                ]
+
+                # 清除舊資料（對應A.py的7個區域）
+                for row in ws.iter_rows(min_row=1, min_col=53, max_row=100, max_col=64):
+                    for cell in row:
+                        cell.value = None
+                for row in ws.iter_rows(min_row=1, min_col=66, max_row=100, max_col=77):
+                    for cell in row:
+                        cell.value = None
+                for row in ws.iter_rows(min_row=1, min_col=79, max_row=100, max_col=90):
+                    for cell in row:
+                        cell.value = None
+                for row in ws.iter_rows(min_row=1, min_col=92, max_row=100, max_col=103):
+                    for cell in row:
+                        cell.value = None
+                for row in ws.iter_rows(min_row=1, min_col=105, max_row=100, max_col=116):
+                    for cell in row:
+                        cell.value = None
+                for row in ws.iter_rows(min_row=1, min_col=118, max_row=100, max_col=129):
+                    for cell in row:
+                        cell.value = None
+                for row in ws.iter_rows(min_row=1, min_col=131, max_row=100, max_col=142):
                     for cell in row:
                         cell.value = None
 
@@ -647,12 +689,34 @@ class StockProcess:
                             years_data = df.columns[1:]
                             df[years_data] = df[years_data].apply(pd.to_numeric, errors='coerce')
 
+                            # *** 關鍵修改：反轉年份欄位的順序 ***
+                            first_col = df.columns[0]  # 第一欄
+                            year_cols = df.columns[1:]  # 年份欄位
+                            reversed_year_cols = year_cols[::-1]  # 反轉年份欄位順序
+
+                            # 重新組合欄位順序：第一欄 + 反轉的年份欄位
+                            new_column_order = [first_col] + list(reversed_year_cols)
+                            df_reordered = df[new_column_order]
+
                             # 將表格資料寫入指定位置並調整格式
-                            start_row, start_col = 1, 1
-                            for r_idx, row in enumerate(dataframe_to_rows(df, index=False, header=True),
+                            start_row = starting_cell[df_amount][1]
+                            start_col = starting_cell[df_amount][2]
+
+                            for r_idx, row in enumerate(dataframe_to_rows(df_reordered, index=False, header=True),
                                                         start=start_row):
-                                for c_idx, value in enumerate(row, start=start_col):
-                                    cell = ws.cell(row=r_idx, column=c_idx, value=value)
+                                row_data = list(row)
+
+                                # 第一欄（項目名稱）寫入起始欄位
+                                cell = ws.cell(row=r_idx, column=start_col, value=row_data[0])
+                                cell.font = Font(size=12, bold=(r_idx == start_row))
+
+                                # 年份數據從右邊開始寫入（從起始欄位+11開始往左）
+                                year_data = row_data[1:]  # 除了第一欄以外的年份數據
+
+                                # 從起始欄位+11開始往左寫（假設有12欄的空間）
+                                for year_idx, value in enumerate(year_data):
+                                    column_position = (start_col + 11) - year_idx  # 從右邊往左寫
+                                    cell = ws.cell(row=r_idx, column=column_position, value=value)
                                     cell.font = Font(size=12, bold=(r_idx == start_row))
 
                             # 自動調整欄寬
@@ -672,6 +736,35 @@ class StockProcess:
                 return excel_base64, f"處理Ratios資料時發生錯誤: {e}"
         else:
             return excel_base64, '無原始資料'
+
+    async def EPS_PE_MarketCap_data_write_to_excel(self, EPS_PE_MarketCap_content, stock, excel_base64):
+        """將 EPS_PE_MarketCap 數據寫入 Excel base64"""
+        try:
+            excel_binary = base64.b64decode(excel_base64)
+            excel_buffer = io.BytesIO(excel_binary)
+            wb = load_workbook(excel_buffer)
+            ws = wb.worksheets[0]
+
+            # 處理資料
+            for data in EPS_PE_MarketCap_content.get(stock, {}):
+                start_cell = "EN1"
+                start_row = int(start_cell[2:])  # 提取行號，例如 "1"
+
+                for i, (key, value) in enumerate(data.items()):
+                    row = start_row + i  # 從起始行開始逐行寫入
+                    ws[f"EN{row}"] = key  # 寫入鍵到 EN 列
+                    ws[f"EO{row}"] = value  # 寫入值到 EO 列
+
+            # 儲存到 base64
+            output_buffer = io.BytesIO()
+            wb.save(output_buffer)
+            output_buffer.seek(0)
+            modified_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
+
+            return modified_base64, f'{stock}的EPS_PE_MarketCap成功寫入及儲存成功'
+
+        except Exception as e:
+            return excel_base64, f"處理 EPS_PE_MarketCap 時發生錯誤: {e}"
 
     async def _rate_limit(self, api_key="yfinance"):
         """實施速率限制"""
@@ -786,7 +879,7 @@ class StockManager:
         self.scraper = scraper
         self.processor = processor
         self.pattern1 = r'^[a-zA-Z\-\.]{1,5}'
-        self.pattern2 = r'是非美國企業，此頁面須付費！'
+        self.pattern2 = r'是非美國企業，此頁面須付費！$'
         self.semaphore = asyncio.Semaphore(max_concurrent)
         self.delay = delay
         self.excel_files = {}  # 儲存每支股票的Excel base64
@@ -965,9 +1058,10 @@ class StockValidator:
 class StockAnalyzerGUI:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("📈 股票分析系統 v1.0")
-        self.root.geometry("900x700")
-        self.root.configure(bg='#f0f0f0')
+        self.root.title("股票爬蟲程式 v2.0")
+        self.root.geometry("1400x1000")
+        self.root.configure(bg='#1a1a1a')  # 深色背景
+        self.root.minsize(1200, 900)
 
         # 設定樣式
         self.style = ttk.Style()
@@ -984,114 +1078,310 @@ class StockAnalyzerGUI:
         self.setup_ui()
 
     def setup_custom_styles(self):
-        """設定自訂樣式"""
+        """設定現代化樣式"""
+        # 深色主題配色
+        bg_dark = '#1a1a1a'
+        bg_card = '#2d2d2d'
+        accent_blue = '#00d4aa'
+        accent_orange = '#ff6b35'
+        text_primary = '#ffffff'
+        text_secondary = '#b0b0b0'
+
+        # 配置主框架樣式
+        self.style.configure('Card.TFrame',
+                             background=bg_card,
+                             relief='flat',
+                             borderwidth=1)
+
+        # 配置標籤框架樣式
+        self.style.configure('Card.TLabelframe',
+                             background=bg_card,
+                             foreground=text_primary,
+                             borderwidth=2,
+                             relief='flat')
+
+        self.style.configure('Card.TLabelframe.Label',
+                             background=bg_card,
+                             foreground=accent_blue,
+                             font=('Microsoft JhengHei', 12, 'bold'))
+
         # 主要按鈕樣式
         self.style.configure('Primary.TButton',
-                             font=('Arial', 12, 'bold'),
-                             foreground='white')
+                             font=('Microsoft JhengHei', 11, 'bold'),
+                             foreground='white',
+                             focuscolor='none',
+                             borderwidth=0,
+                             padding=(20, 10))
         self.style.map('Primary.TButton',
-                       background=[('active', '#0056b3'), ('!active', '#007bff')])
+                       background=[('active', '#00b894'), ('!active', accent_blue)])
 
         # 停止按鈕樣式
         self.style.configure('Danger.TButton',
-                             font=('Arial', 12, 'bold'),
-                             foreground='white')
+                             font=('Microsoft JhengHei', 11, 'bold'),
+                             foreground='white',
+                             focuscolor='none',
+                             borderwidth=0,
+                             padding=(20, 10))
         self.style.map('Danger.TButton',
-                       background=[('active', '#c82333'), ('!active', '#dc3545')])
+                       background=[('active', '#e84393'), ('!active', accent_orange)])
 
         # 瀏覽按鈕樣式
         self.style.configure('Secondary.TButton',
-                             font=('Arial', 10))
+                             font=('Microsoft JhengHei', 9),
+                             foreground=text_primary,
+                             focuscolor='none',
+                             borderwidth=1,
+                             padding=(15, 8))
         self.style.map('Secondary.TButton',
-                       background=[('active', '#5a6268'), ('!active', '#6c757d')])
+                       background=[('active', '#636e72'), ('!active', '#74b9ff')])
+
+        # 標籤樣式
+        self.style.configure('Title.TLabel',
+                             background=bg_card,
+                             foreground=text_primary,
+                             font=('Microsoft JhengHei', 14))
+
+        self.style.configure('Subtitle.TLabel',
+                             background=bg_card,
+                             foreground=text_secondary,
+                             font=('Microsoft JhengHei', 10))
+
+        # 輸入框樣式
+        self.style.configure('Modern.TEntry',
+                             fieldbackground='#3d3d3d',
+                             foreground=text_primary,
+                             borderwidth=1,
+                             insertcolor=text_primary,
+                             selectbackground=accent_blue)
+
+        # 進度條樣式
+        self.style.configure('Modern.Horizontal.TProgressbar',
+                             background=accent_blue,
+                             troughcolor='#3d3d3d',
+                             borderwidth=0,
+                             lightcolor=accent_blue,
+                             darkcolor=accent_blue)
 
     def setup_ui(self):
-        # 主框架
-        main_frame = ttk.Frame(self.root, padding="15")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        # 主框架 - 添加漸層效果
+        main_frame = tk.Frame(self.root, bg='#1a1a1a')
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
 
-        # 標題區域
-        title_frame = ttk.Frame(main_frame)
-        title_frame.grid(row=0, column=0, columnspan=3, pady=(0, 20))
+        # 標題區域 - 縮小高度
+        title_frame = tk.Frame(main_frame, bg='#2d2d2d', relief='flat', bd=2)
+        title_frame.pack(fill=tk.X, pady=(0, 15))
 
-        title_label = ttk.Label(title_frame, text="📊 股票分析系統",
-                                font=('Arial', 24, 'bold'),
-                                foreground='#2c3e50')
+        # 縮小標題區域的內邊距
+        title_content = tk.Frame(title_frame, bg='#2d2d2d')
+        title_content.pack(fill=tk.X, padx=25, pady=15)
+
+        # 縮小主標題字體
+        title_label = tk.Label(title_content,
+                               text="📊 股票爬蟲程式",
+                               font=('標楷體', 22, 'bold'),  # 從28減少到22
+                               foreground='#00d4aa',
+                               bg='#2d2d2d')
         title_label.pack()
 
-        subtitle_label = ttk.Label(title_frame, text="🚀 專業股票數據分析工具",
-                                   font=('Arial', 12),
-                                   foreground='#7f8c8d')
+        # 縮小副標題字體和內容
+        subtitle_label = tk.Label(title_content,
+                                  text="專業級股票數據爬蟲工具 | Version 2.0",  # 合併成一行
+                                  font=('標楷體', 16),  # 從18減少到12
+                                  foreground='#b0b0b0',
+                                  bg='#2d2d2d')
         subtitle_label.pack(pady=(5, 0))
 
-        # 輸入區域框架
-        input_frame = ttk.LabelFrame(main_frame, text="🔍 輸入設定", padding="15")
-        input_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 15))
+        # 輸入區域框架 - 縮小間距
+        input_frame = tk.Frame(main_frame, bg='#2d2d2d', relief='flat', bd=2)
+        input_frame.pack(fill=tk.X, pady=(0, 15))
 
-        # 股票代碼輸入區
-        ttk.Label(input_frame, text="💼 股票代碼：", font=('Arial', 12)).grid(row=0, column=0, sticky=tk.W, pady=5)
-        stocks_entry = ttk.Entry(input_frame, textvariable=self.stocks_var, width=50, font=('Arial', 12))
-        stocks_entry.grid(row=0, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
+        input_content = tk.Frame(input_frame, bg='#2d2d2d')
+        input_content.pack(fill=tk.X, padx=20, pady=15)
 
-        # 說明文字
-        help_text = "💡 請輸入股票代碼，多個股票請用逗號分隔 (例如: NVDA, MSFT, AMD, PLTR)"
-        ttk.Label(input_frame, text=help_text, font=('Arial', 10), foreground='#6c757d').grid(row=1, column=0,
-                                                                                              columnspan=3, sticky=tk.W,
-                                                                                              pady=(0, 10))
+        # 縮小區域標題
+        input_title = tk.Label(input_content,
+                               text="🔍 爬蟲設定",
+                               font=('標楷體', 16, 'bold'),  # 從18減少到14
+                               foreground='#00d4aa',
+                               bg='#2d2d2d')
+        input_title.pack(anchor=tk.W, pady=(0, 10))
 
-        # 輸出資料夾選擇
-        ttk.Label(input_frame, text="📁 輸出資料夾：", font=('Arial', 12)).grid(row=2, column=0, sticky=tk.W, pady=5)
-        folder_entry = ttk.Entry(input_frame, textvariable=self.output_folder_var, width=45, font=('Arial', 11))
-        folder_entry.grid(row=2, column=1, sticky=(tk.W, tk.E), pady=5, padx=(10, 5))
+        # 股票代碼輸入區 - 縮小間距和字體
+        stock_frame = tk.Frame(input_content, bg='#2d2d2d')
+        stock_frame.pack(fill=tk.X, pady=(0, 10))
 
-        browse_btn = ttk.Button(input_frame, text="🔍 瀏覽", command=self.browse_folder, style='Secondary.TButton')
-        browse_btn.grid(row=2, column=2, padx=(5, 0), pady=5)
+        tk.Label(stock_frame,
+                 text="💼 股票代碼",
+                 font=('標楷體', 14, 'bold'),  # 從14減少到12
+                 foreground='#ffffff',
+                 bg='#2d2d2d').pack(anchor=tk.W, pady=(0, 5))
 
-        # 控制區域框架
-        control_frame = ttk.LabelFrame(main_frame, text="🎮 操作控制", padding="15")
-        control_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 15))
+        stocks_entry = tk.Entry(stock_frame,
+                                textvariable=self.stocks_var,
+                                font=('Consolas', 12),  # 從12減少到11
+                                bg='#3d3d3d',
+                                fg='#ffffff',
+                                insertbackground='#00d4aa',
+                                selectbackground='#00d4aa',
+                                selectforeground='#000000',
+                                relief='flat',
+                                bd=2)
+        stocks_entry.pack(fill=tk.X, ipady=6)
 
-        # 按鈕區
-        button_frame = ttk.Frame(control_frame)
-        button_frame.pack(pady=10)
+        # 縮小說明文字
+        help_label = tk.Label(stock_frame,
+                              text="💡 輸入股票代碼，多個代碼請用逗號分隔 (例如: NVDA, MSFT, AAPL, GOOGL)\n💡 請勿輸入非美國股票代碼",
+                              font=('Times New Roman', 12),  # 從12減少到10
+                              foreground='#ffb347',
+                              bg='#2d2d2d',
+                              justify=tk.LEFT)
+        help_label.pack(anchor=tk.W, pady=(5, 0))
 
-        self.start_btn = ttk.Button(button_frame, text="🚀 開始分析", command=self.start_analysis,
-                                    style='Primary.TButton', width=15)
-        self.start_btn.pack(side=tk.LEFT, padx=10)
+        # 輸出資料夾選擇 - 縮小間距
+        folder_frame = tk.Frame(input_content, bg='#2d2d2d')
+        folder_frame.pack(fill=tk.X, pady=(10, 0))
 
-        self.stop_btn = ttk.Button(button_frame, text="⏹️ 停止", command=self.stop_analysis,
-                                   style='Danger.TButton', width=15, state=tk.DISABLED)
-        self.stop_btn.pack(side=tk.LEFT, padx=10)
+        tk.Label(folder_frame,
+                 text="📁 輸出資料夾",
+                 font=('標楷體', 14, 'bold'),  # 從14減少到12
+                 foreground='#ffffff',
+                 bg='#2d2d2d').pack(anchor=tk.W, pady=(0, 5))
 
-        # 進度區域
-        progress_frame = ttk.Frame(control_frame)
-        progress_frame.pack(fill=tk.X, pady=(10, 5))
+        folder_input_frame = tk.Frame(folder_frame, bg='#2d2d2d')
+        folder_input_frame.pack(fill=tk.X)
 
-        ttk.Label(progress_frame, text="📊 分析進度：", font=('Arial', 11)).pack(anchor=tk.W)
-        self.progress = ttk.Progressbar(progress_frame, mode='indeterminate', length=500)
-        self.progress.pack(fill=tk.X, pady=(5, 0))
+        folder_entry = tk.Entry(folder_input_frame,
+                                textvariable=self.output_folder_var,
+                                font=('Consolas', 12),  # 從11減少到10
+                                bg='#3d3d3d',
+                                fg='#ffffff',
+                                insertbackground='#00d4aa',
+                                relief='flat',
+                                bd=2)
+        folder_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=5)
 
-        # 狀態標籤
-        self.status_label = ttk.Label(control_frame, text="✅ 系統準備就緒", font=('Arial', 12), foreground='#28a745')
-        self.status_label.pack(pady=5)
+        browse_btn = tk.Button(folder_input_frame,
+                               text="🔍 瀏覽",
+                               command=self.browse_folder,
+                               font=('新細明體', 12, 'bold'),  # 從12減少到10
+                               bg='#74b9ff',
+                               fg='white',
+                               activebackground='#0984e3',
+                               activeforeground='white',
+                               relief='flat',
+                               bd=0,
+                               cursor='hand2')
+        browse_btn.pack(side=tk.RIGHT, padx=(8, 0), ipady=5, ipadx=12)
 
-        # 日誌區域框架
-        log_frame = ttk.LabelFrame(main_frame, text="📋 執行日誌", padding="10")
-        log_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
+        # 控制區域框架 - 縮小間距
+        control_frame = tk.Frame(main_frame, bg='#2d2d2d', relief='flat', bd=2)
+        control_frame.pack(fill=tk.X, pady=(0, 15))
 
-        # 滾動文字框 - 增大字體
-        self.log_text = scrolledtext.ScrolledText(log_frame, width=85, height=18,
-                                                  font=('Consolas', 11),
-                                                  bg='#f8f9fa',
-                                                  fg='#212529')
-        self.log_text.pack(fill=tk.BOTH, expand=True)
+        control_content = tk.Frame(control_frame, bg='#2d2d2d')
+        control_content.pack(fill=tk.X, padx=20, pady=15)
 
-        # 配置網格權重
-        self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
-        main_frame.columnconfigure(1, weight=1)
-        main_frame.rowconfigure(3, weight=1)
-        input_frame.columnconfigure(1, weight=1)
+        # 縮小控制區域標題
+        control_title = tk.Label(control_content,
+                                 text="🎮 分析控制",
+                                 font=('標楷體', 16, 'bold'),  # 從18減少到14
+                                 foreground='#00d4aa',
+                                 bg='#2d2d2d')
+        control_title.pack(anchor=tk.W, pady=(0, 10))
+
+        # 按鈕區 - 縮小按鈕大小
+        button_frame = tk.Frame(control_content, bg='#2d2d2d')
+        button_frame.pack(pady=(0, 15))
+
+        self.start_btn = tk.Button(button_frame,
+                                   text="🚀 開始爬蟲",
+                                   command=self.start_analysis,
+                                   font=('標楷體', 15, 'bold'),  # 從16減少到13
+                                   bg='#00d4aa',
+                                   fg='white',
+                                   activebackground='#00b894',
+                                   activeforeground='white',
+                                   relief='flat',
+                                   bd=0,
+                                   cursor='hand2',
+                                   width=15,  # 從15減少到12
+                                   height=2)  # 從2減少到1
+        self.start_btn.pack(side=tk.LEFT, padx=(0, 15))
+
+        self.stop_btn = tk.Button(button_frame,
+                                  text="⏹️ 停止爬蟲",
+                                  command=self.stop_analysis,
+                                  font=('標楷體', 15, 'bold'),  # 從16減少到13
+                                  bg='#ff6b35',
+                                  fg='white',
+                                  activebackground='#e84393',
+                                  activeforeground='white',
+                                  relief='flat',
+                                  bd=0,
+                                  cursor='hand2',
+                                  width=15,  # 從15減少到12
+                                  height=2,  # 從2減少到1
+                                  state=tk.DISABLED)
+        self.stop_btn.pack(side=tk.LEFT)
+
+        # 進度區域 - 縮小間距
+        progress_frame = tk.Frame(control_content, bg='#2d2d2d')
+        progress_frame.pack(fill=tk.X, pady=(0, 10))
+
+        tk.Label(progress_frame,
+                 text="📊 爬蟲進度",
+                 font=('標楷體', 12, 'bold'),  # 從12減少到11
+                 foreground='#ffffff',
+                 bg='#2d2d2d').pack(anchor=tk.W, pady=(0, 5))
+
+        # 縮小進度條高度
+        progress_container = tk.Frame(progress_frame, bg='#3d3d3d', height=8)  # 從8減少到6
+        progress_container.pack(fill=tk.X, pady=(0, 8))
+        progress_container.pack_propagate(False)
+
+        self.progress = ttk.Progressbar(progress_container,
+                                        mode='indeterminate',
+                                        style='Modern.Horizontal.TProgressbar')
+        self.progress.pack(fill=tk.BOTH, expand=True)
+
+        # 縮小狀態標籤
+        self.status_label = tk.Label(control_content,
+                                     text="✅ 系統準備就緒",
+                                     font=('標楷體', 13, 'bold'),  # 從13減少到11
+                                     foreground='#00d4aa',
+                                     bg='#2d2d2d')
+        self.status_label.pack()
+
+        # 日誌區域框架 - 這裡是最重要的部分，讓它佔用更多空間
+        log_frame = tk.Frame(main_frame, bg='#2d2d2d', relief='flat', bd=2)
+        log_frame.pack(fill=tk.BOTH, expand=True)  # 確保日誌區域可以擴展
+
+        log_content = tk.Frame(log_frame, bg='#2d2d2d')
+        log_content.pack(fill=tk.BOTH, expand=True, padx=20, pady=15)
+
+        # 縮小日誌標題
+        log_title = tk.Label(log_content,
+                             text="📋 執行日誌",
+                             font=('標楷體', 16, 'bold'),  # 從18減少到14
+                             foreground='#00d4aa',
+                             bg='#2d2d2d')
+        log_title.pack(anchor=tk.W, pady=(0, 8))
+
+        # 放大滾動文字框 - 這是關鍵改進
+        self.log_text = scrolledtext.ScrolledText(log_content,
+                                                  font=('Consolas', 12),  # 稍微增加字體大小，從11到12
+                                                  bg='#1a1a1a',
+                                                  fg='#00ff00',
+                                                  insertbackground='#00d4aa',
+                                                  selectbackground='#00d4aa',
+                                                  selectforeground='#000000',
+                                                  relief='flat',
+                                                  bd=2,
+                                                  wrap=tk.WORD)  # 添加自動換行
+        self.log_text.pack(fill=tk.BOTH, expand=True)  # 確保日誌文字框能夠擴展
+
+        # 初始化日誌
+        self.log_text.insert(tk.END, "=== 股票爬蟲程式已啟動 ===\n")
+        self.log_text.insert(tk.END, "系統準備就緒，請輸入股票代碼開始爬蟲...\n\n")
 
     def browse_folder(self):
         folder = filedialog.askdirectory()
@@ -1099,57 +1389,52 @@ class StockAnalyzerGUI:
             self.output_folder_var.set(folder)
 
     def log(self, message):
-        """添加日誌訊息 - 增強視覺效果"""
+        """現代化日誌顯示"""
         timestamp = datetime.now().strftime("%H:%M:%S")
 
-        # 根據訊息類型添加顏色標記
+        # 根據訊息類型選擇顏色
         if "✅" in message or "成功" in message:
-            color_tag = "success"
+            color = "#00ff00"  # 綠色
         elif "❌" in message or "錯誤" in message or "失敗" in message:
-            color_tag = "error"
+            color = "#ff4757"  # 紅色
         elif "⚠️" in message or "警告" in message:
-            color_tag = "warning"
+            color = "#ffa502"  # 橙色
         elif "🔄" in message or "處理" in message:
-            color_tag = "processing"
+            color = "#3742fa"  # 藍色
         elif "🚀" in message or "開始" in message:
-            color_tag = "start"
+            color = "#ff6b35"  # 橙紅色
         else:
-            color_tag = "normal"
+            color = "#ffffff"  # 白色
 
-        # 配置標籤顏色
-        self.log_text.tag_configure("success", foreground="#28a745")
-        self.log_text.tag_configure("error", foreground="#dc3545")
-        self.log_text.tag_configure("warning", foreground="#ffc107")
-        self.log_text.tag_configure("processing", foreground="#17a2b8")
-        self.log_text.tag_configure("start", foreground="#6f42c1")
-        self.log_text.tag_configure("timestamp", foreground="#6c757d")
+        # 配置顏色標籤
+        tag_name = f"color_{color.replace('#', '')}"
+        self.log_text.tag_configure(tag_name, foreground=color)
+        self.log_text.tag_configure("timestamp", foreground="#70a1ff")
 
-        # 插入時間戳
-        self.log_text.insert(tk.END, f"[{timestamp}] ", "timestamp")
         # 插入訊息
-        self.log_text.insert(tk.END, f"{message}\n", color_tag)
+        self.log_text.insert(tk.END, f"[{timestamp}] ", "timestamp")
+        self.log_text.insert(tk.END, f"{message}\n", tag_name)
 
         self.log_text.see(tk.END)
         self.root.update_idletasks()
 
     def update_status(self, status):
-        """更新狀態標籤 - 增強視覺效果"""
-        # 根據狀態類型設定顏色和圖標
+        """更新狀態標籤"""
         if "完成" in status or "成功" in status:
+            color = "#00d4aa"
             icon = "✅"
-            color = "#28a745"
         elif "失敗" in status or "錯誤" in status:
+            color = "#ff4757"
             icon = "❌"
-            color = "#dc3545"
         elif "停止" in status:
+            color = "#ffa502"
             icon = "⏹️"
-            color = "#ffc107"
-        elif "步驟" in status:
+        elif "步驟" in status or "處理" in status:
+            color = "#3742fa"
             icon = "🔄"
-            color = "#17a2b8"
         else:
+            color = "#ffffff"
             icon = "📊"
-            color = "#6c757d"
 
         self.status_label.config(text=f"{icon} {status}", foreground=color)
         self.root.update_idletasks()
@@ -1185,10 +1470,10 @@ class StockAnalyzerGUI:
 
         # 確認開始（顯示即將驗證的股票）
         confirmation_message = (
-            f"即將驗證並分析以下股票：\n"
+            f"即將驗證並爬蟲以下股票：\n"
             f"📈 {', '.join(stocks)}\n\n"
             f"🔍 系統將先驗證股票代碼有效性\n"
-            f"📊 僅分析有效的股票代碼\n"
+            f"📊 僅爬蟲有效的股票代碼\n"
             f"🔥 預計需要數分鐘時間\n\n"
             f"是否開始？"
         )
@@ -1215,8 +1500,8 @@ class StockAnalyzerGUI:
     def stop_analysis(self):
         """停止分析"""
         self.is_running = False
-        self.update_status("正在停止分析...")
-        self.log("🛑 使用者請求停止分析")
+        self.update_status("正在停止爬蟲...")
+        self.log("🛑 使用者請求停止爬蟲")
 
     def run_analysis(self, stocks):
         """執行分析的主函數"""
@@ -1230,7 +1515,7 @@ class StockAnalyzerGUI:
 
         except Exception as e:
             self.log(f"❌ 發生錯誤：{str(e)}")
-            messagebox.showerror("❌ 錯誤", f"分析過程中發生錯誤：\n{str(e)}")
+            messagebox.showerror("❌ 錯誤", f"爬蟲過程中發生錯誤：\n{str(e)}")
 
         finally:
             # 恢復按鈕狀態
@@ -1243,7 +1528,7 @@ class StockAnalyzerGUI:
         """異步執行分析 - 增強日誌顯示並加入股票代碼驗證"""
         try:
             self.log("🎯" + "=" * 80)
-            self.log("🚀 股票分析系統啟動")
+            self.log("🚀 股票爬蟲系統啟動")
             self.log(f"📊 輸入股票：{', '.join(stocks)}")
             self.log(f"🔢 輸入數量：{len(stocks)} 支")
             self.log("🎯" + "=" * 80)
@@ -1267,27 +1552,27 @@ class StockAnalyzerGUI:
 
             # 如果沒有有效股票，停止分析
             if not valid_stocks:
-                self.log("❌ 沒有找到任何有效的股票代碼，停止分析")
-                self.update_status("分析失敗：無有效股票代碼")
+                self.log("❌ 沒有找到任何有效的股票代碼，停止爬蟲")
+                self.update_status("爬蟲失敗：無有效股票代碼")
                 return
 
             # 更新要分析的股票列表
             stocks = valid_stocks
-            self.log(f"\n✅ 將分析以下有效股票：{', '.join(stocks)}")
+            self.log(f"\n✅ 將爬蟲以下有效股票：{', '.join(stocks)}")
             self.log("🎯" + "=" * 80)
 
             # 檢查是否被停止
             if not self.is_running:
-                self.log("🛑 分析被使用者停止")
+                self.log("🛑 爬蟲被使用者停止")
                 return
 
             # 創建分析物件（使用有效股票列表）
-            self.update_status("初始化分析系統")
-            self.log("🔧 正在初始化分析系統...")
+            self.update_status("初始化爬蟲系統")
+            self.log("🔧 正在初始化爬蟲系統...")
             scraper = StockScraper(stocks=stocks, max_concurrent=3)
             processor = StockProcess(max_concurrent=2, request_delay=2.5)
             manager = StockManager(scraper, processor, max_concurrent=3)
-            self.log("✅ 分析系統初始化完成")
+            self.log("✅ 爬蟲系統初始化完成")
 
             # 步驟 1：初始化 Excel 檔案
             if not self.is_running:
@@ -1298,8 +1583,8 @@ class StockAnalyzerGUI:
 
             success = await manager.initialize_excel_files(stocks)
             if not success:
-                self.log("❌ Excel 檔案初始化失敗，停止分析")
-                self.update_status("分析失敗：Excel 初始化錯誤")
+                self.log("❌ Excel 檔案初始化失敗，停止爬蟲")
+                self.update_status("爬蟲失敗：Excel 初始化錯誤")
                 return
 
             self.log("✅ Excel 檔案初始化完成")
@@ -1380,9 +1665,9 @@ class StockAnalyzerGUI:
 
             # 顯示完成摘要
             self.log("\n" + "🎉" + "=" * 80)
-            self.log("🎊 股票分析完成！")
+            self.log("🎊 股票爬蟲完成！")
             self.log(f"⏱️ 總執行時間：{execution_time:.2f} 秒")
-            self.log(f"📊 成功分析股票：{len(stocks)} 支")
+            self.log(f"📊 成功爬蟲股票：{len(stocks)} 支")
             self.log(f"💾 保存檔案數量：{len(saved_files)} 個")
             self.log(f"📁 保存位置：{output_folder}")
 
@@ -1394,13 +1679,13 @@ class StockAnalyzerGUI:
 
             self.log("🎉" + "=" * 80)
 
-            self.update_status("分析完成！")
+            self.update_status("爬蟲完成！")
 
             # 顯示完成對話框
             messagebox.showinfo(
-                "🎉 分析完成",
-                f"股票分析已成功完成！\n\n"
-                f"📊 分析股票：{len(stocks)} 支\n"
+                "🎉 爬蟲完成",
+                f"股票爬蟲已成功完成！\n\n"
+                f"📊 爬蟲股票：{len(stocks)} 支\n"
                 f"⏱️ 執行時間：{execution_time:.1f} 秒\n"
                 f"💾 保存檔案：{len(saved_files)} 個\n"
                 f"📁 保存位置：{output_folder}"
@@ -1409,8 +1694,8 @@ class StockAnalyzerGUI:
         except Exception as e:
             error_msg = f"系統錯誤：{str(e)}"
             self.log(f"❌ {error_msg}")
-            self.update_status("分析失敗")
-            messagebox.showerror("❌ 錯誤", f"分析過程中發生錯誤：\n{str(e)}")
+            self.update_status("爬蟲失敗")
+            messagebox.showerror("❌ 錯誤", f"爬蟲過程中發生錯誤：\n{str(e)}")
             raise e
 
     def run(self):
