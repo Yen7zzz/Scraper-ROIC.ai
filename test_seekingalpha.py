@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 class StockScraper:
-    def __init__(self, stocks, headless=False, max_concurrent=3):
+    def __init__(self, stocks, headless=True, max_concurrent=3):
         """
         初始化爬蟲類別。
         stocks: 股票代碼的列表
@@ -54,7 +54,7 @@ class StockScraper:
             try:
                 context = await self.browser.new_context(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-                    viewport={"width": 1920, "height": 1080},  # 增加視窗大小
+                    viewport={"width": 800, "height": 600},  # 增加視窗大小
                     java_script_enabled=True,  # 確保JavaScript啟用
                 )
                 try:
@@ -102,11 +102,6 @@ class StockScraper:
                 # 獲取頁面內容
                 content = await page.content()
 
-                # 儲存HTML以供調試
-                with open(f'{stock}_debug.html', 'w', encoding='utf-8') as f:
-                    f.write(content)
-                print(f"已儲存 {stock} 的HTML內容到 {stock}_debug.html")
-
                 # 使用BeautifulSoup直接解析目標表格
                 soup = BeautifulSoup(content, 'html.parser')
 
@@ -115,41 +110,9 @@ class StockScraper:
                 growth_section = soup.find('section', {'data-test-id': 'card-container-growth-rates'})
 
                 if growth_section:
-                    print("找到Growth Rates section")
                     target_table = growth_section.find('table', {'data-test-id': 'table'})
                     if target_table:
                         print("在Growth Rates section中找到目標表格")
-
-                # 方法2: 如果沒找到，尋找包含"Growth Rates"標題的表格
-                if not target_table:
-                    all_tables = soup.find_all('table', {'data-test-id': 'table'})
-                    print(f"找到 {len(all_tables)} 個表格")
-
-                    for i, table in enumerate(all_tables):
-                        # 查看表格的父容器或前面的元素
-                        parent = table.find_parent()
-                        while parent and parent.name != 'section':
-                            parent = parent.find_parent()
-
-                        if parent:
-                            section_text = parent.get_text()
-                            if 'Growth Rates' in section_text and any(
-                                    keyword in section_text for keyword in ['Revenue', 'EBITDA', 'Net Income']):
-                                print(f"根據section內容找到目標表格 (第 {i} 個)")
-                                target_table = table
-                                break
-
-                # 方法3: 最後檢查表格內容
-                if not target_table:
-                    for i, table in enumerate(all_tables):
-                        tbody = table.find('tbody')
-                        if tbody:
-                            text_content = tbody.get_text()
-                            if all(keyword in text_content for keyword in
-                                   ['Revenue', 'EBITDA', 'Net Income', 'Levered Free Cash Flow']):
-                                print(f"根據完整內容匹配找到目標表格 (第 {i} 個)")
-                                target_table = table
-                                break
 
                 if target_table:
                     print("開始解析目標表格...")
@@ -173,9 +136,9 @@ class StockScraper:
                     tbody = target_table.find('tbody')
                     if tbody:
                         rows = tbody.find_all('tr')
-                        print(f"找到 {len(rows)} 個數據行")
+                        # print(f"找到 {len(rows)} 個數據行")
 
-                        data = []
+                        # 只處理Revenue行並返回5Y和10Y數據
                         for i, row in enumerate(rows):
                             row_data = []
 
@@ -199,40 +162,29 @@ class StockScraper:
                                     cell_value = td.get_text(strip=True)
                                 row_data.append(cell_value)
 
-                            data.append(row_data)
-
-                            # 只顯示我們關心的行
-                            if any(keyword in row_data[0] for keyword in
-                                   ['Revenue', 'EBITDA', 'Net Income', 'Levered Free Cash Flow', 'EPS']):
+                            # 檢查是否為Revenue行
+                            if 'Revenue' in row_data[0] and 'Revenue per Share' not in row_data[0]:
                                 print(f"找到關鍵行 {i + 1}: {row_data}")
 
-                        if data and headers:
-                            df = pd.DataFrame(data, columns=headers)
-                            print(f"成功創建DataFrame，形狀: {df.shape}")
+                                # 根據你的例子：['Revenue', '16.10%', '25.24%', '27.89%', '18.73%']
+                                # 提取5Y和10Y數據 (假設是倒數第二和最後一個)
+                                if len(row_data) >= 5:
+                                    result = {
+                                        "5Y": row_data[-2],  # 倒數第二個 '27.89%'
+                                        "10Y": row_data[-1]  # 最後一個 '18.73%'
+                                    }
+                                    print(f"提取結果: {result}")
+                                    return result
+                                else:
+                                    return {"error": f"Revenue行數據不足: {row_data}"}
 
-                            # 篩選出我們要的行
-                            keywords = ['Revenue', 'EBITDA', 'Operation Income', 'Net Income', 'EPS',
-                                        'Levered Free Cash Flow']
-                            filtered_df = df[df.iloc[:, 0].str.contains('|'.join(keywords), na=False)]
-
-                            print("篩選後的重要資料:")
-                            print(filtered_df)
-
-                            return [df, filtered_df]
-                        else:
-                            print("無法提取表格數據或標題")
                     else:
                         print("未找到tbody")
+
+                    return {"error": "未找到Revenue行"}
                 else:
                     print("未找到包含Growth Rates的目標表格")
-
-                    # 顯示所有表格的部分內容供調試
-                    for i, table in enumerate(all_tables):
-                        print(f"=== 表格 {i} ===")
-                        print(str(table)[:300] + "...")
-                        print()
-
-                return f"無法找到目標表格 for {stock}"
+                    return {"error": "未找到目標表格"}
 
             except Exception as e:
                 print(f"第 {attempt + 1} 次嘗試失敗: {e}")
@@ -240,7 +192,7 @@ class StockScraper:
                 if attempt < retries:
                     await asyncio.sleep(random.uniform(5, 10))  # 增加等待時間
 
-        return f"Failed to retrieve data for {stock} after {retries} attempts"
+        return {"error": f"Failed to retrieve data for {stock} after {retries} attempts"}
 
     async def cleanup(self):
         """清理資源。"""
@@ -259,15 +211,9 @@ async def main():
         semaphore = asyncio.Semaphore(scraper.max_concurrent)
         result = await scraper.fetch_seekingalpha_data('O', semaphore)
 
-        print("=== 最終結果 ===")
-        if 'O' in result and not isinstance(result['O'], str):
-            print(f"成功獲取 {len(result['O'])} 個表格")
-            for i, df in enumerate(result['O']):
-                print(f"表格 {i}:")
-                print(df)
-                print("-" * 50)
-        else:
-            print(f"結果: {result}")
+        print("=" * 50)
+        print("最終結果:")
+        print(result)
 
     except Exception as e:
         print(f"執行錯誤: {e}")
