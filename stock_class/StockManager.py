@@ -50,6 +50,7 @@ class StockManager:
     async def process_ratios(self, stocks):
         """處理Ratios數據"""
         raw_df_ratios = await self.scraper.run_ratios()
+        # print(raw_df_ratios)
         for index, stock in enumerate(stocks):
             if stock in self.excel_files:
                 modified_base64, message = await self.processor.process_df_ratios(
@@ -110,46 +111,87 @@ class StockManager:
 
         return saved_files
 
+    async def process_seekingalpha(self, stocks):
+        """處理Revenue growth數據"""
+        raw_revenue_growth = await self.scraper.run_seekingalpha()
+        print(f"獲取到的revenue_growth數據: {raw_revenue_growth}")
 
-    async def get_multiple_wacc_data(self, stocks):
-        """
-        批量獲取多個股票的WACC數據
-        返回格式: {'O': 8, 'AAPL': 10, 'MSFT': 9}
-        """
-        semaphore = asyncio.Semaphore(self.max_concurrent)
-        tasks = [self.scraper.fetch_wacc_data(stock, semaphore) for stock in stocks]
-        results = await asyncio.gather(*tasks)
-
-        # 合併結果為單一字典
-        final_result = {}
-        for result in results:
-            final_result.update(result)
-
-        return final_result
+        # 遍歷每個字典，提取股票代碼和對應的revenue growth數據
+        for revenue_dict in raw_revenue_growth:
+            for stock, revenue_data in revenue_dict.items():
+                if stock in self.excel_files and revenue_data is not None:
+                    # 檢查是否包含錯誤信息
+                    if isinstance(revenue_data, dict) and "error" not in revenue_data:
+                        # 調用processor寫入數據
+                        modified_base64, message = self.processor.write_seekingalpha_data_to_excel(
+                            stock=stock,
+                            raw_revenue_growth=revenue_data,
+                            excel_base64=self.excel_files[stock]
+                        )
+                        if modified_base64:
+                            # 更新Excel base64數據
+                            self.excel_files[stock] = modified_base64
+                            print(f"✅ {message}")
+                        else:
+                            print(f"❌ {message}")
+                    else:
+                        print(f"❌ {stock} 的數據包含錯誤或格式不正確: {revenue_data}")
+                else:
+                    if stock not in self.excel_files:
+                        print(f"❌ {stock} 的Excel檔案不存在")
+                    if revenue_data is None:
+                        print(f"❌ {stock} 的revenue_growth值為None")
 
     async def process_wacc(self, stocks):
-        """處理Ratios數據"""
+        """處理wacc數據"""
         raw_wacc = await self.scraper.run_wacc()
-        print(raw_wacc)
-        # for index, stock in enumerate(stocks):
-        #     if stock in self.excel_files:
-        #         modified_base64, message = await self.processor.process_df_ratios(
-        #             raw_df_ratios[index], stock, self.excel_files[stock]
-        #         )
-        #         self.excel_files[stock] = modified_base64
-        #         print(f"✅ {message}")
+        print(f"獲取到的WACC數據: {raw_wacc}")
+
+        # 遍歷每個字典，提取股票代碼和對應的WACC值
+        for wacc_dict in raw_wacc:
+            for stock, wacc_value in wacc_dict.items():
+                if stock in self.excel_files and wacc_value is not None:
+                    # 調用processor寫入數據
+                    modified_base64, message = self.processor.write_wacc_data_to_excel(
+                        stock=stock,
+                        wacc_value=wacc_value,
+                        excel_base64=self.excel_files[stock]
+                    )
+                    if modified_base64:
+                        # 更新Excel base64數據
+                        self.excel_files[stock] = modified_base64
+                        print(f"✅ {message}")
+                    else:
+                        print(f"❌ {message}")
+                else:
+                    if stock not in self.excel_files:
+                        print(f"❌ {stock} 的Excel檔案不存在")
+                    if wacc_value is None:
+                        print(f"❌ {stock} 的WACC值為None")
 
 
 
 from stock_class.StockScraper import StockScraper
 from stock_class.StockProcess import StockProcess
+
+
+# 修正後的 main 函數
 async def main():
-    # 可以輸入多個股票代碼
-    stocks = ['O', 'AAPL', 'MSFT']  # 範例：多個股票
+    stocks = ['O', 'AAPL', 'CCL', 'NVDA']
     scraper = StockScraper(stocks=stocks)
     process = StockProcess()
     manager = StockManager(scraper=scraper, processor=process)
-    await manager.process_wacc(stocks=stocks)
+
+    # 初始化Excel檔案
+    success = await manager.initialize_excel_files(stocks=stocks)
+    if not success:
+        print("Excel檔案初始化失敗，程式終止")
+        return
+
+    # 處理SeekingAlpha數據
+    await manager.process_seekingalpha(stocks=stocks)
+
+    print("所有股票的revenue growth數據處理完成！")
 
 
 if __name__ == "__main__":

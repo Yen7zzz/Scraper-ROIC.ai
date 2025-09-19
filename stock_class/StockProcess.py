@@ -39,39 +39,39 @@ class StockProcess:
         except Exception as e:
             return "", f"創建Excel檔案時發生錯誤: {e}"
 
-    def write_wacc_to_excel_base64(self, stock_code: str, wacc_value: str, excel_base64: str) -> tuple:
-        """將WACC值寫入Excel的base64"""
-        try:
-            excel_binary = base64.b64decode(excel_base64)
-            excel_buffer = io.BytesIO(excel_binary)
-            workbook = load_workbook(excel_buffer)
-
-            if "現金流折現法" in workbook.sheetnames:
-                worksheet = workbook["現金流折現法"]
-            else:
-                worksheet = workbook.active
-
-            # 寫入 WACC 值到 C6 儲存格
-            if wacc_value != "未知":
-                if wacc_value.endswith('%'):
-                    numeric_value = float(wacc_value.rstrip('%')) / 100
-                    worksheet['C6'] = numeric_value
-                    worksheet['C6'].number_format = '0.00%'
-                else:
-                    worksheet['C6'] = wacc_value
-            else:
-                worksheet['C6'] = "無法取得"
-
-            # 儲存修改後的檔案到記憶體
-            output_buffer = io.BytesIO()
-            workbook.save(output_buffer)
-            output_buffer.seek(0)
-            modified_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
-
-            return modified_base64, f"已將 {stock_code} 的 WACC 值 ({wacc_value}) 寫入 C6 儲存格"
-
-        except Exception as e:
-            return excel_base64, f"操作 Excel 檔案時發生錯誤: {e}"
+    # def write_wacc_to_excel_base64(self, stock_code: str, wacc_value: str, excel_base64: str) -> tuple:
+    #     """將WACC值寫入Excel的base64"""
+    #     try:
+    #         excel_binary = base64.b64decode(excel_base64)
+    #         excel_buffer = io.BytesIO(excel_binary)
+    #         workbook = load_workbook(excel_buffer)
+    #
+    #         if "現金流折現法" in workbook.sheetnames:
+    #             worksheet = workbook["現金流折現法"]
+    #         else:
+    #             worksheet = workbook.active
+    #
+    #         # 寫入 WACC 值到 C6 儲存格
+    #         if wacc_value != "未知":
+    #             if wacc_value.endswith('%'):
+    #                 numeric_value = float(wacc_value.rstrip('%')) / 100
+    #                 worksheet['C6'] = numeric_value
+    #                 worksheet['C6'].number_format = '0.00%'
+    #             else:
+    #                 worksheet['C6'] = wacc_value
+    #         else:
+    #             worksheet['C6'] = "無法取得"
+    #
+    #         # 儲存修改後的檔案到記憶體
+    #         output_buffer = io.BytesIO()
+    #         workbook.save(output_buffer)
+    #         output_buffer.seek(0)
+    #         modified_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
+    #
+    #         return modified_base64, f"已將 {stock_code} 的 WACC 值 ({wacc_value}) 寫入 C6 儲存格"
+    #
+    #     except Exception as e:
+    #         return excel_base64, f"操作 Excel 檔案時發生錯誤: {e}"
 
     async def process_df_summary(self, raw_df_summary, stock, excel_base64):
         """處理summary數據並寫入Excel base64"""
@@ -480,6 +480,82 @@ class StockProcess:
 
             except Exception as e:
                 return excel_base64, f"獲取 {stock} 資料時發生錯誤：{str(e)}"
+
+    def write_wacc_data_to_excel(self, stock, wacc_value, excel_base64):
+        """將WACC數據寫入Excel"""
+        try:
+            print(f"正在處理 {stock} 的WACC值: {wacc_value}")
+
+            # 解碼Excel
+            excel_binary = base64.b64decode(excel_base64)
+            excel_buffer = io.BytesIO(excel_binary)
+            wb = load_workbook(excel_buffer)
+            ws = wb.worksheets[3]  # 使用第四個工作表
+
+            # 假設WACC值要寫入特定位置，這裡需要根據你的Excel模板調整
+            # 例如：假設WACC值寫入B2儲存格
+            ws['C5'] = wacc_value  # 你需要根據實際Excel模板調整位置
+
+            # 可以添加一些格式設定
+            # ws['B2'].font = Font(bold=False)
+
+            # 保存修改後的Excel
+            output_buffer = io.BytesIO()
+            wb.save(output_buffer)
+            output_buffer.seek(0)
+            modified_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
+
+            return modified_base64, f"成功將 {stock} 的WACC值 {wacc_value} 寫入Excel"
+
+        except Exception as e:
+            return None, f"寫入 {stock} 的WACC數據時發生錯誤: {e}"
+
+    def write_seekingalpha_data_to_excel(self, stock, raw_revenue_growth, excel_base64):
+        """將revenue_growth數據寫入Excel"""
+        try:
+            print(f"正在處理 {stock} 的revenue_growth值: {raw_revenue_growth}")
+
+            # 解碼Excel
+            excel_binary = base64.b64decode(excel_base64)
+            excel_buffer = io.BytesIO(excel_binary)
+            wb = load_workbook(excel_buffer)
+            ws = wb.worksheets[3]  # 假設需要寫入的工作表是第四個
+
+            # 提取5Y和10Y的數值（去掉%符號，轉換為float）
+            if "5Y" in raw_revenue_growth and "10Y" in raw_revenue_growth:
+                # 從 '27.89%' 提取 27.89
+                revenue_5y_str = raw_revenue_growth["5Y"].replace('%', '')
+                revenue_10y_str = raw_revenue_growth["10Y"].replace('%', '')
+
+                try:
+                    revenue_5y = float(revenue_5y_str) / 100
+                    revenue_10y = float(revenue_10y_str) / 100
+                except ValueError:
+                    return None, f"無法轉換 {stock} 的revenue數值為浮點數: 5Y={revenue_5y_str}, 10Y={revenue_10y_str}"
+
+                # 寫入對應的儲存格
+                ws['F4'] = revenue_5y  # 5Y數值寫入F4
+                ws['F5'] = revenue_10y  # 10Y數值寫入F5
+                ws['F2'] = revenue_10y  # 10Y數值寫入F5
+
+                # 可以添加一些格式設定
+                # ws['F4'].font = Font(bold=True)
+                # ws['F5'].font = Font(bold=True)
+
+                # 保存修改後的Excel
+                output_buffer = io.BytesIO()
+                wb.save(output_buffer)
+                output_buffer.seek(0)
+                modified_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
+
+                return modified_base64, f"成功將 {stock} 的revenue growth數據寫入Excel (5Y: {revenue_5y}%, 10Y: {revenue_10y}%)"
+
+            else:
+                return None, f"{stock} 的revenue數據缺少5Y或10Y欄位: {raw_revenue_growth}"
+
+        except Exception as e:
+            return None, f"寫入 {stock} 的revenue growth數據時發生錯誤: {e}"
+
 
     async def _write_to_excel(self, excel_base64, dic_data):
         """寫入Excel文件"""

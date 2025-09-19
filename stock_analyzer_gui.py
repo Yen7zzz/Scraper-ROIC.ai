@@ -289,8 +289,8 @@ class StockScraper:
                 await page.wait_for_selector('table', timeout=30000)
                 content = await page.content()
                 soup = BeautifulSoup(content, 'html.parser')
-                span_string = soup.find_all('span', attrs={'class': 'flex text-sm uppercase text-muted-foreground'})
-                span_int_value = soup.find_all('span', attrs={'class': 'flex text-lg text-foreground'})
+                span_string = soup.find_all('span', attrs={'stock_class': 'flex text-sm uppercase text-muted-foreground'})
+                span_int_value = soup.find_all('span', attrs={'stock_class': 'flex text-lg text-foreground'})
 
                 dic_data = {
                     span_string[0].text: float(span_int_value[0].text),

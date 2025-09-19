@@ -11,6 +11,7 @@ from stock_class.StockProcess import StockProcess
 from stock_class.StockManager import StockManager
 from stock_class.StockValidator import StockValidator
 
+
 # ===== GUI 部分 =====
 class StockAnalyzerGUI:
     def __init__(self):
@@ -218,7 +219,7 @@ class StockAnalyzerGUI:
         folder_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=5)
 
         browse_btn = tk.Button(folder_input_frame,
-                               text="🔍 瀏覽",
+                               text="📂 瀏覽",
                                command=self.browse_folder,
                                font=('新細明體', 12, 'bold'),  # 從12減少到10
                                bg='#74b9ff',
@@ -494,7 +495,7 @@ class StockAnalyzerGUI:
 
             # 新增：股票代碼驗證步驟
             self.update_status("驗證股票代碼有效性")
-            self.log("\n🔍 步驟 0/7：正在驗證股票代碼...")
+            self.log("\n🔍 步驟 0/8：正在驗證股票代碼...")
 
             validator = StockValidator()
             valid_stocks, invalid_stocks = await validator.validate_stocks_async(
@@ -536,7 +537,7 @@ class StockAnalyzerGUI:
                 return
 
             self.update_status("初始化 Excel 檔案")
-            self.log("\n📄 步驟 1/7：正在初始化 Excel 檔案...")
+            self.log("\n🔄 步驟 1/8：正在初始化 Excel 檔案...")
 
             success = await manager.initialize_excel_files(stocks)
             if not success:
@@ -551,7 +552,7 @@ class StockAnalyzerGUI:
                 return
 
             self.update_status("抓取 Summary 數據")
-            self.log("\n📊 步驟 2/7：正在抓取 Summary 數據...")
+            self.log("\n📊 步驟 2/8：正在抓取 Summary 數據...")
 
             await manager.process_summary(stocks)
             self.log("✅ Summary 數據處理完成")
@@ -561,7 +562,7 @@ class StockAnalyzerGUI:
                 return
 
             self.update_status("抓取 Financial 數據")
-            self.log("\n💰 步驟 3/7：正在抓取 Financial 數據...")
+            self.log("\n💰 步驟 3/8：正在抓取 Financial 數據...")
 
             await manager.process_financial(stocks)
             self.log("✅ Financial 數據處理完成")
@@ -571,7 +572,7 @@ class StockAnalyzerGUI:
                 return
 
             self.update_status("抓取 Ratios 數據")
-            self.log("\n📈 步驟 4/7：正在抓取 Ratios 數據...")
+            self.log("\n📈 步驟 4/8：正在抓取 Ratios 數據...")
 
             await manager.process_ratios(stocks)
             self.log("✅ Ratios 數據處理完成")
@@ -581,7 +582,7 @@ class StockAnalyzerGUI:
                 return
 
             self.update_status("抓取 EPS/PE/MarketCap 數據")
-            self.log("\n📊 步驟 5/7：正在抓取 EPS/PE/MarketCap 數據...")
+            self.log("\n📊 步驟 5/8：正在抓取 EPS/PE/MarketCap 數據...")
 
             await manager.process_EPS_PE_MarketCap(stocks)
             self.log("✅ EPS/PE/MarketCap 數據處理完成")
@@ -591,17 +592,31 @@ class StockAnalyzerGUI:
                 return
 
             self.update_status("抓取其他數據")
-            self.log("\n🔍 步驟 6/7：正在抓取其他數據...")
+            self.log("\n🔍 步驟 6/8：正在抓取其他數據...")
 
             await manager.process_others_data(stocks)
             self.log("✅ 其他數據處理完成")
 
-            # 步驟 7：處理 EPS 成長率
+            # 步驟 7：處理 Revenue Growth 和 WACC 數據
             if not self.is_running:
                 return
 
+            self.update_status("處理 Revenue Growth 和 WACC 數據")
+            self.log("\n📈 步驟 7/8：正在處理 Revenue Growth 和 WACC 數據...")
+
+            # 新增：處理 SeekingAlpha Revenue Growth 數據
+            self.log("🔍 正在抓取 SeekingAlpha Revenue Growth 數據...")
+            await manager.process_seekingalpha(stocks)
+            self.log("✅ SeekingAlpha Revenue Growth 數據處理完成")
+
+            # 新增：處理 GuruFocus WACC 數據
+            self.log("💰 正在抓取 GuruFocus WACC 數據...")
+            await manager.process_wacc(stocks)
+            self.log("✅ GuruFocus WACC 數據處理完成")
+
+            # 步驟 8：處理 EPS 成長率處理
             self.update_status("處理 EPS 成長率")
-            self.log("\n📈 步驟 7/7：正在處理 EPS 成長率...")
+            self.log("\n📈 步驟 8/8：正在處理 EPS 成長率...")
 
             await manager.process_EPS_Growth_Rate(stocks)
             self.log("✅ EPS 成長率處理完成")
