@@ -1,3 +1,42 @@
+# 在您的 stock_analyzer_gui.py 檔案最上方添加這段程式碼
+
+import os
+import sys
+
+
+def setup_playwright_path():
+    """設定 Playwright 瀏覽器路徑"""
+
+    # 如果是打包後的執行檔
+    if hasattr(sys, '_MEIPASS'):
+        # PyInstaller 打包後的臨時資料夾
+        base_path = sys._MEIPASS
+
+        # 設定瀏覽器路徑到打包後的位置
+        browser_path = os.path.join(base_path, 'ms-playwright')
+
+        if os.path.exists(browser_path):
+            os.environ['PLAYWRIGHT_BROWSERS_PATH'] = browser_path
+            print(f"設定瀏覽器路徑: {browser_path}")
+        else:
+            # 嘗試原始路徑
+            original_path = r'C:\Users\2993\AppData\Local\ms-playwright'
+            if os.path.exists(original_path):
+                os.environ['PLAYWRIGHT_BROWSERS_PATH'] = original_path
+                print(f"使用原始瀏覽器路徑: {original_path}")
+    else:
+        # 開發環境，使用原始路徑
+        original_path = r'C:\Users\2993\AppData\Local\ms-playwright'
+        if os.path.exists(original_path):
+            os.environ['PLAYWRIGHT_BROWSERS_PATH'] = original_path
+
+
+# 在導入 playwright 之前呼叫這個函數
+setup_playwright_path()
+
+# 然後才導入 playwright
+from playwright.sync_api import sync_playwright
+
 import asyncio
 import base64
 import io
