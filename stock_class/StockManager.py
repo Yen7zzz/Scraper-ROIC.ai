@@ -169,6 +169,55 @@ class StockManager:
                     if wacc_value is None:
                         print(f"❌ {stock} 的WACC值為None")
 
+    async def process_TradingView(self, stocks):
+        """處理TradingView數據"""
+        raw_TradingView = await self.scraper.run_TradingView()
+        print(f"獲取到的TradingView數據: {raw_TradingView}")
+
+        # 遍歷每個字典，提取股票代碼和對應的WACC值
+        for TradingView_dict in raw_TradingView:
+            for stock, TradingView_value in TradingView_dict.items():
+                if stock in self.excel_files and TradingView_value is not None:
+                    # 調用processor寫入數據
+                    modified_base64, message = self.processor.write_TradeingView_data_to_excel(
+                        stock=stock,
+                        tradingview_data=TradingView_value,
+                        excel_base64=self.excel_files[stock]
+                    )
+                    if modified_base64:
+                        # 更新Excel base64數據
+                        self.excel_files[stock] = modified_base64
+                        print(f"✅ {message}")
+                    else:
+                        print(f"❌ {message}")
+                else:
+                    if stock not in self.excel_files:
+                        print(f"❌ {stock} 的Excel檔案不存在")
+                    if TradingView_value is None:
+                        print(f"❌ {stock} 的WACC值為None")
+
+    async def process_combined_summary_and_metrics(self, stocks):
+        """處理合併的Summary和指標數據"""
+        summary_results, metrics_results = await self.scraper.run_combined_summary_and_metrics()
+
+        # 處理Summary數據
+        for index, stock in enumerate(stocks):
+            if stock in self.excel_files and index < len(summary_results):
+                modified_base64, message = await self.processor.process_df_summary(
+                    summary_results[index][stock], stock, self.excel_files[stock]
+                )
+                self.excel_files[stock] = modified_base64
+                print(f"✅ {message}")
+
+        # 處理指標數據
+        for index, stock in enumerate(stocks):
+            if stock in self.excel_files and index < len(metrics_results):
+                modified_base64, message = await self.processor.EPS_PE_MarketCap_data_write_to_excel(
+                    {stock: [metrics_results[index][stock]]}, stock, self.excel_files[stock]
+                )
+                self.excel_files[stock] = modified_base64
+                print(f"✅ {message}")
+
 
 
 from stock_class.StockScraper import StockScraper
@@ -177,7 +226,7 @@ from stock_class.StockProcess import StockProcess
 
 # 修正後的 main 函數
 async def main():
-    stocks = ['O', 'AAPL', 'CCL', 'NVDA']
+    stocks = ['PLTR', 'NVTS']
     scraper = StockScraper(stocks=stocks)
     process = StockProcess()
     manager = StockManager(scraper=scraper, processor=process)
@@ -189,9 +238,12 @@ async def main():
         return
 
     # 處理SeekingAlpha數據
+    # await manager.process_TradingView(stocks=stocks)
+    # await manager.process_combined_summary_and_metrics(stocks=stocks)
+    # await manager.process_others_data(stocks=stocks)
     await manager.process_seekingalpha(stocks=stocks)
-
     print("所有股票的revenue growth數據處理完成！")
+
 
 
 if __name__ == "__main__":

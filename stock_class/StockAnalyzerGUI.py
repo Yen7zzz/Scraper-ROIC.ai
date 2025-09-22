@@ -35,6 +35,11 @@ class StockAnalyzerGUI:
 
         self.setup_ui()
 
+        # 新增：用於追蹤當前運行的任務和線程
+        self.current_task = None
+        self.current_thread = None
+        self.event_loop = None
+
     def setup_custom_styles(self):
         """設定現代化樣式"""
         # 深色主題配色
@@ -114,11 +119,17 @@ class StockAnalyzerGUI:
 
         # 進度條樣式
         self.style.configure('Modern.Horizontal.TProgressbar',
-                             background=accent_blue,
-                             troughcolor='#3d3d3d',
-                             borderwidth=0,
-                             lightcolor=accent_blue,
-                             darkcolor=accent_blue)
+                             background=accent_blue,  # 進度條填充顏色
+                             troughcolor='#3d3d3d',  # 進度條背景顏色
+                             borderwidth=0,  # 無邊框
+                             lightcolor=accent_blue,  # 亮部顏色
+                             darkcolor=accent_blue,  # 暗部顏色
+                             focuscolor='none')  # 無焦點顏色
+
+        # 新增：確保進度條在不同狀態下的顏色
+        self.style.map('Modern.Horizontal.TProgressbar',
+                       background=[('active', accent_blue),
+                                   ('!active', accent_blue)])
 
     def setup_ui(self):
         # 主框架 - 添加漸層效果
@@ -281,33 +292,47 @@ class StockAnalyzerGUI:
                                   state=tk.DISABLED)
         self.stop_btn.pack(side=tk.LEFT)
 
-        # 進度區域 - 縮小間距
+        # 進度區域 - 修改進度條設置
         progress_frame = tk.Frame(control_content, bg='#2d2d2d')
         progress_frame.pack(fill=tk.X, pady=(0, 10))
 
         tk.Label(progress_frame,
                  text="📊 爬蟲進度",
-                 font=('標楷體', 12, 'bold'),  # 從12減少到11
+                 font=('標楷體', 12, 'bold'),
                  foreground='#ffffff',
                  bg='#2d2d2d').pack(anchor=tk.W, pady=(0, 5))
 
-        # 縮小進度條高度
-        progress_container = tk.Frame(progress_frame, bg='#3d3d3d', height=8)  # 從8減少到6
+        # 修正：進度條容器 - 增加高度讓進度條更明顯
+        progress_container = tk.Frame(progress_frame, bg='#3d3d3d', height=20)  # 從 8 增加到 20
         progress_container.pack(fill=tk.X, pady=(0, 8))
         progress_container.pack_propagate(False)
 
+        # 修正：進度條設置 - 添加更多屬性確保正常顯示
         self.progress = ttk.Progressbar(progress_container,
-                                        mode='indeterminate',
-                                        style='Modern.Horizontal.TProgressbar')
-        self.progress.pack(fill=tk.BOTH, expand=True)
+                                        mode='determinate',
+                                        maximum=100,
+                                        value=0,
+                                        style='Modern.Horizontal.TProgressbar',
+                                        length=400)  # 新增：設定長度
+        self.progress.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)  # 新增：內邊距
 
-        # 縮小狀態標籤
+        # 進度百分比標籤
+        self.progress_percent_label = tk.Label(progress_frame,
+                                               text="0%",
+                                               font=('標楷體', 10, 'bold'),
+                                               foreground='#00d4aa',
+                                               bg='#2d2d2d')
+        self.progress_percent_label.pack(anchor=tk.W, pady=(2, 0))
+
+        # 需要在你的 setup_ui 方法中添加狀態標籤
+
+        # 在進度條區域之後，日誌區域之前添加：
         self.status_label = tk.Label(control_content,
                                      text="✅ 系統準備就緒",
-                                     font=('標楷體', 13, 'bold'),  # 從13減少到11
+                                     font=('標楷體', 13, 'bold'),
                                      foreground='#00d4aa',
                                      bg='#2d2d2d')
-        self.status_label.pack()
+        self.status_label.pack(pady=(10, 0))
 
         # 日誌區域框架 - 這裡是最重要的部分，讓它佔用更多空間
         log_frame = tk.Frame(main_frame, bg='#2d2d2d', relief='flat', bd=2)
@@ -340,6 +365,99 @@ class StockAnalyzerGUI:
         # 初始化日誌
         self.log_text.insert(tk.END, "=== 股票爬蟲程式已啟動 ===\n")
         self.log_text.insert(tk.END, "系統準備就緒，請輸入股票代碼開始爬蟲...\n\n")
+
+    def update_progress(self, current_step, total_steps, step_name=""):
+        """更新進度條 - 帶動畫效果"""
+        if total_steps > 0:
+            target_progress = (current_step / total_steps) * 100
+            current_progress = self.progress['value']
+
+            # 如果進度需要增加，使用動畫效果
+            if target_progress > current_progress:
+                self.animate_progress_smooth(current_progress, target_progress, step_name, current_step, total_steps)
+            else:
+                # 如果進度不變或減少，直接設置
+                self.progress['value'] = target_progress
+                self.progress_percent_label.config(text=f"{target_progress:.1f}%")
+                if step_name:
+                    self.update_status(f"{step_name} ({current_step}/{total_steps})")
+                self.root.update_idletasks()
+
+    def animate_progress(self, start_value, end_value, step_name="", current_step=0, total_steps=0):
+        """動畫效果填滿進度條"""
+        # 計算動畫參數
+        progress_diff = end_value - start_value
+        animation_steps = max(int(progress_diff * 2), 20)  # 至少20步，確保動畫流暢
+        step_increment = progress_diff / animation_steps
+        delay_ms = max(10, int(800 / animation_steps))  # 總動畫時間約800ms
+
+        def animate_step(step):
+            if step <= animation_steps:
+                # 計算當前進度值
+                current_value = start_value + (step * step_increment)
+                if step == animation_steps:
+                    current_value = end_value  # 確保最後一步精確到目標值
+
+                # 更新進度條
+                self.progress['value'] = current_value
+                self.progress_percent_label.config(text=f"{current_value:.1f}%")
+
+                # 更新狀態（只在最後一步更新，避免閃爍）
+                if step == animation_steps and step_name:
+                    self.update_status(f"{step_name} ({current_step}/{total_steps})")
+
+                self.root.update_idletasks()
+
+                # 如果還沒到最後一步，繼續動畫
+                if step < animation_steps:
+                    self.root.after(delay_ms, lambda: animate_step(step + 1))
+
+        # 開始動畫
+        animate_step(0)
+
+    # 可選：添加更精細的動畫控制
+    def animate_progress_smooth(self, start_value, end_value, step_name="", current_step=0, total_steps=0):
+        """更平滑的動畫效果 - 使用緩動函數"""
+        import math
+
+        progress_diff = end_value - start_value
+        animation_steps = max(int(progress_diff * 3), 30)  # 更多步驟，更平滑
+        total_duration = 1200  # 總動畫時間1.2秒
+        delay_ms = int(total_duration / animation_steps)
+
+        def ease_out_cubic(t):
+            """緩出動畫函數 - 開始快，結束慢"""
+            return 1 - pow(1 - t, 3)
+
+        def animate_step(step):
+            if step <= animation_steps:
+                # 使用緩動函數計算進度
+                t = step / animation_steps
+                eased_t = ease_out_cubic(t)
+                current_value = start_value + (progress_diff * eased_t)
+
+                if step == animation_steps:
+                    current_value = end_value
+
+                # 更新UI
+                self.progress['value'] = current_value
+                self.progress_percent_label.config(text=f"{current_value:.1f}%")
+
+                if step == animation_steps and step_name:
+                    self.update_status(f"{step_name} ({current_step}/{total_steps})")
+
+                self.root.update_idletasks()
+
+                if step < animation_steps:
+                    self.root.after(delay_ms, lambda: animate_step(step + 1))
+
+        animate_step(0)
+
+    def reset_progress(self):
+        """重置進度條"""
+        self.progress['value'] = 0
+        self.progress_percent_label.config(text="0%")
+        self.root.update_idletasks()
 
     def browse_folder(self):
         folder = filedialog.askdirectory()
@@ -439,7 +557,7 @@ class StockAnalyzerGUI:
         if not messagebox.askyesno("🚀 確認開始", confirmation_message):
             return
 
-        # 禁用按鈕
+            # 禁用按鈕
         self.start_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
         self.is_running = True
@@ -447,43 +565,97 @@ class StockAnalyzerGUI:
         # 清空日誌
         self.log_text.delete(1.0, tk.END)
 
-        # 開始進度條
-        self.progress.start()
+        # 重置進度條（不再使用 start()）
+        self.reset_progress()
 
-        # 在新線程中執行分析
-        thread = threading.Thread(target=self.run_analysis, args=(stocks,))
-        thread.daemon = True
-        thread.start()
+        # 在創建線程時記錄引用
+        self.current_thread = threading.Thread(target=self.run_analysis, args=(stocks,))
+        self.current_thread.daemon = True
+        self.current_thread.start()
 
+    # 3. 完全重寫 stop_analysis 方法 - 立即停止並恢復UI
     def stop_analysis(self):
-        """停止分析"""
-        self.is_running = False
-        self.update_status("正在停止爬蟲...")
-        self.log("🛑 使用者請求停止爬蟲")
+        """立即停止分析並恢復UI狀態"""
+        try:
+            # 1. 立即設定停止標誌
+            self.is_running = False
+
+            # 2. 立即恢復UI狀態（不等待線程結束）
+            self.start_btn.config(state=tk.NORMAL)
+            self.stop_btn.config(state=tk.DISABLED)
+
+            # 3. 重置進度條歸零
+            self.progress['value'] = 0
+            self.progress_percent_label.config(text="0%")
+
+            # 4. 更新狀態標籤
+            self.update_status("爬蟲已停止")
+
+            # 5. 記錄停止訊息
+            self.log("🛑 使用者請求立即停止爬蟲")
+            self.log("✅ UI狀態已恢復，可以重新開始爬蟲")
+
+            # 6. 嘗試取消當前的異步任務
+            if self.current_task and not self.current_task.done():
+                self.current_task.cancel()
+                self.log("🚫 已取消正在執行的異步任務")
+
+            # 7. 嘗試停止事件循環
+            if self.event_loop and self.event_loop.is_running():
+                self.event_loop.call_soon_threadsafe(self.event_loop.stop)
+                self.log("🔄 已請求停止事件循環")
+
+            # 8. 強制更新UI
+            self.root.update_idletasks()
+
+            self.log("✅ 停止操作完成，系統已就緒")
+
+        except Exception as e:
+            # 即使發生錯誤也要確保UI恢復
+            self.start_btn.config(state=tk.NORMAL)
+            self.stop_btn.config(state=tk.DISABLED)
+            self.progress['value'] = 0
+            self.progress_percent_label.config(text="0%")
+            self.log(f"⚠️ 停止過程中發生錯誤，但UI已恢復: {e}")
 
     def run_analysis(self, stocks):
         """執行分析的主函數"""
         try:
-            # 創建新的事件循環
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            # 創建新的事件循環並記錄引用
+            self.event_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.event_loop)
 
-            # 執行異步分析
-            loop.run_until_complete(self.async_analysis(stocks))
+            # 執行異步分析並記錄任務引用
+            self.current_task = self.event_loop.create_task(self.async_analysis(stocks))
+            self.event_loop.run_until_complete(self.current_task)
+
+        except asyncio.CancelledError:
+            # 處理任務被取消的情況
+            self.log("🛑 異步任務已被成功取消")
 
         except Exception as e:
-            self.log(f"❌ 發生錯誤：{str(e)}")
-            messagebox.showerror("❌ 錯誤", f"爬蟲過程中發生錯誤：\n{str(e)}")
+            # 只有在系統仍在運行時才顯示錯誤
+            if self.is_running:
+                self.log(f"❌ 發生錯誤：{str(e)}")
+                messagebox.showerror("❌ 錯誤", f"爬蟲過程中發生錯誤：\n{str(e)}")
+            else:
+                self.log("ℹ️ 爬蟲已被使用者停止")
 
         finally:
-            # 恢復按鈕狀態
-            self.start_btn.config(state=tk.NORMAL)
-            self.stop_btn.config(state=tk.DISABLED)
-            self.progress.stop()
-            self.is_running = False
+            # 清理資源
+            self.current_task = None
+            self.current_thread = None
+            self.event_loop = None
+
+            # 只有在系統仍在運行時才恢復UI（避免重複恢復）
+            if self.is_running:
+                self.start_btn.config(state=tk.NORMAL)
+                self.stop_btn.config(state=tk.DISABLED)
+                self.reset_progress()
+                self.is_running = False
 
     async def async_analysis(self, stocks):
-        """異步執行分析 - 增強日誌顯示並加入股票代碼驗證"""
+        """異步執行分析 - 整合Summary和EPS/PE/MarketCap的合併抓取"""
         try:
             self.log("🎯" + "=" * 80)
             self.log("🚀 股票爬蟲系統啟動")
@@ -491,11 +663,23 @@ class StockAnalyzerGUI:
             self.log(f"🔢 輸入數量：{len(stocks)} 支")
             self.log("🎯" + "=" * 80)
 
+            # 在每個主要步驟前都檢查停止狀態
+            def check_if_stopped():
+                if not self.is_running:
+                    self.log("🛑 檢測到停止信號，正在中止操作...")
+                    raise asyncio.CancelledError("使用者請求停止")
+
             start_time = time.time()
 
-            # 新增：股票代碼驗證步驟
-            self.update_status("驗證股票代碼有效性")
-            self.log("\n🔍 步驟 0/8：正在驗證股票代碼...")
+            # 定義總步驟數（根據你的流程）
+            total_steps = 9  # 9個主要步驟
+            current_step = 0
+
+            # 步驟 1：股票代碼驗證步驟
+            check_if_stopped()
+            current_step += 1
+            self.update_progress(current_step, total_steps, "驗證股票代碼有效性")
+            self.log("\n🔍 步驟 1/9：正在驗證股票代碼...")
 
             validator = StockValidator()
             valid_stocks, invalid_stocks = await validator.validate_stocks_async(
@@ -532,12 +716,14 @@ class StockAnalyzerGUI:
             manager = StockManager(scraper, processor, max_concurrent=3)
             self.log("✅ 爬蟲系統初始化完成")
 
-            # 步驟 1：初始化 Excel 檔案
+            # 步驟 2：初始化 Excel 檔案
             if not self.is_running:
                 return
 
-            self.update_status("初始化 Excel 檔案")
-            self.log("\n🔄 步驟 1/8：正在初始化 Excel 檔案...")
+            check_if_stopped()
+            current_step += 1
+            self.update_progress(current_step, total_steps, "初始化 Excel 檔案")
+            self.log("\n📄 步驟 2/9：正在初始化 Excel 檔案...")
 
             success = await manager.initialize_excel_files(stocks)
             if not success:
@@ -547,89 +733,97 @@ class StockAnalyzerGUI:
 
             self.log("✅ Excel 檔案初始化完成")
 
-            # 步驟 2：抓取 Summary 數據
+            # 步驟 3：抓取 Summary 和關鍵指標數據
             if not self.is_running:
                 return
 
-            self.update_status("抓取 Summary 數據")
-            self.log("\n📊 步驟 2/8：正在抓取 Summary 數據...")
+            check_if_stopped()
+            current_step += 1
+            self.update_progress(current_step, total_steps, "抓取 Summary 和關鍵指標數據")
+            self.log("\n📊 步驟 3/9：正在同時抓取 Summary 和 EPS/PE/MarketCap 數據...")
 
-            await manager.process_summary(stocks)
-            self.log("✅ Summary 數據處理完成")
+            await manager.process_combined_summary_and_metrics(stocks)
+            self.log("✅ Summary 和關鍵指標數據處理完成")
 
-            # 步驟 3：抓取 Financial 數據
+            # 步驟 4：抓取 Financial 數據
             if not self.is_running:
                 return
 
-            self.update_status("抓取 Financial 數據")
-            self.log("\n💰 步驟 3/8：正在抓取 Financial 數據...")
+            check_if_stopped()
+            current_step += 1
+            self.update_progress(current_step, total_steps, "抓取 Financial 數據")
+            self.log("\n💰 步驟 4/9：正在抓取 Financial 數據...")
 
             await manager.process_financial(stocks)
             self.log("✅ Financial 數據處理完成")
 
-            # 步驟 4：抓取 Ratios 數據
+            # 步驟 5：抓取 Ratios 數據
             if not self.is_running:
                 return
 
-            self.update_status("抓取 Ratios 數據")
-            self.log("\n📈 步驟 4/8：正在抓取 Ratios 數據...")
+            check_if_stopped()
+            current_step += 1
+            self.update_progress(current_step, total_steps, "抓取 Ratios 數據")
+            self.log("\n📈 步驟 5/9：正在抓取 Ratios 數據...")
 
             await manager.process_ratios(stocks)
             self.log("✅ Ratios 數據處理完成")
-
-            # 步驟 5：抓取 EPS/PE/MarketCap 數據
-            if not self.is_running:
-                return
-
-            self.update_status("抓取 EPS/PE/MarketCap 數據")
-            self.log("\n📊 步驟 5/8：正在抓取 EPS/PE/MarketCap 數據...")
-
-            await manager.process_EPS_PE_MarketCap(stocks)
-            self.log("✅ EPS/PE/MarketCap 數據處理完成")
 
             # 步驟 6：抓取其他數據
             if not self.is_running:
                 return
 
-            self.update_status("抓取其他數據")
-            self.log("\n🔍 步驟 6/8：正在抓取其他數據...")
+            current_step += 1
+            self.update_progress(current_step, total_steps, "抓取其他股票數據")
+            self.log("\n📋 步驟 6/9：正在抓取其他股票數據...")
 
             await manager.process_others_data(stocks)
-            self.log("✅ 其他數據處理完成")
+            self.log("✅ 其他股票數據處理完成")
 
-            # 步驟 7：處理 Revenue Growth 和 WACC 數據
+            # 步驟 6：處理 Revenue Growth 和 WACC 數據
             if not self.is_running:
                 return
 
-            self.update_status("處理 Revenue Growth 和 WACC 數據")
-            self.log("\n📈 步驟 7/8：正在處理 Revenue Growth 和 WACC 數據...")
+            check_if_stopped()
+            current_step += 1
+            self.update_progress(current_step, total_steps, "處理 Revenue Growth 和 WACC 數據")
+            self.log("\n📈 步驟 7/9：正在處理 Revenue Growth 和 WACC 數據...")
 
-            # 新增：處理 SeekingAlpha Revenue Growth 數據
+            # 處理 SeekingAlpha Revenue Growth 數據
             self.log("🔍 正在抓取 SeekingAlpha Revenue Growth 數據...")
             await manager.process_seekingalpha(stocks)
             self.log("✅ SeekingAlpha Revenue Growth 數據處理完成")
 
-            # 新增：處理 GuruFocus WACC 數據
+            # 處理 GuruFocus WACC 數據
             self.log("💰 正在抓取 GuruFocus WACC 數據...")
             await manager.process_wacc(stocks)
             self.log("✅ GuruFocus WACC 數據處理完成")
 
-            # 步驟 8：處理 EPS 成長率處理
-            self.update_status("處理 EPS 成長率")
-            self.log("\n📈 步驟 8/8：正在處理 EPS 成長率...")
+            # 步驟 7：處理 Trading View處理
+            if not self.is_running:
+                return
 
-            await manager.process_EPS_Growth_Rate(stocks)
-            self.log("✅ EPS 成長率處理完成")
+            check_if_stopped()
+            current_step += 1
+            self.update_progress(current_step, total_steps, "處理 EPS 成長率")
+            self.log("\n📈 步驟 8/9：正在處理 Trading View資料...")
+
+            await manager.process_TradingView(stocks=stocks)
+            self.log("✅ Trading View資料處理完成")
 
             # 保存檔案
             if not self.is_running:
                 return
 
-            self.update_status("保存 Excel 檔案")
-            self.log("\n💾 正在保存 Excel 檔案...")
+            current_step += 1
+            self.update_progress(current_step, total_steps, "保存 Excel 檔案")
+            self.log("\n💾 步驟 9/9：正在保存 Excel 檔案...")
 
             output_folder = self.output_folder_var.get()
             saved_files = manager.save_all_excel_files(stocks, output_folder)
+
+            # 完成時設置進度條為 100%
+            self.update_progress(total_steps, total_steps, "爬蟲完成！")
 
             # 計算執行時間
             end_time = time.time()
@@ -642,6 +836,7 @@ class StockAnalyzerGUI:
             self.log(f"📊 成功爬蟲股票：{len(stocks)} 支")
             self.log(f"💾 保存檔案數量：{len(saved_files)} 個")
             self.log(f"📁 保存位置：{output_folder}")
+            # self.log(f"🚀 效能提升：合併抓取減少了約 {len(stocks)} 次網絡請求")
 
             if saved_files:
                 self.log("\n📋 已保存的檔案：")
@@ -660,14 +855,26 @@ class StockAnalyzerGUI:
                 f"📊 爬蟲股票：{len(stocks)} 支\n"
                 f"⏱️ 執行時間：{execution_time:.1f} 秒\n"
                 f"💾 保存檔案：{len(saved_files)} 個\n"
-                f"📁 保存位置：{output_folder}"
+                f"📁 保存位置：{output_folder}\n"
+                # f"🚀 效能優化：減少 {len(stocks)} 次重複請求"
             )
 
+        except asyncio.CancelledError:
+            # 任務被取消時的處理
+            self.log("🛑 爬蟲任務已被成功取消")
+            self.update_status("爬蟲已停止")
+            raise  # 重新拋出以確保任務正確終止
+
         except Exception as e:
+
+            # 發生錯誤時也要停止進度條
+
+            self.reset_progress()
             error_msg = f"系統錯誤：{str(e)}"
             self.log(f"❌ {error_msg}")
             self.update_status("爬蟲失敗")
             messagebox.showerror("❌ 錯誤", f"爬蟲過程中發生錯誤：\n{str(e)}")
+
             raise e
 
     def run(self):

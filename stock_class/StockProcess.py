@@ -87,7 +87,22 @@ class StockProcess:
                     for cell in row:
                         cell.value = None
 
-                d_1_raw_df_summary = [y for x in raw_df_summary.get(stock, pd.DataFrame({})) for y in x]
+                # 修正：直接使用 raw_df_summary，因為它已經是該股票的數據
+                # 原本的程式碼: d_1_raw_df_summary = [y for x in raw_df_summary.get(stock, pd.DataFrame({})) for y in x]
+                # 新的程式碼：檢查 raw_df_summary 的類型
+                if isinstance(raw_df_summary, list):
+                    # 如果是 list，直接使用
+                    d_1_raw_df_summary = raw_df_summary
+                elif isinstance(raw_df_summary, dict) and stock in raw_df_summary:
+                    # 如果是 dict，取出該股票的數據
+                    stock_data = raw_df_summary[stock]
+                    if isinstance(stock_data, list):
+                        d_1_raw_df_summary = stock_data
+                    else:
+                        d_1_raw_df_summary = [stock_data] if stock_data is not None else []
+                else:
+                    # 其他情況，嘗試直接使用
+                    d_1_raw_df_summary = [raw_df_summary] if raw_df_summary is not None else []
 
                 for df_amount, df in enumerate(d_1_raw_df_summary):
                     df_column_list = df.columns.tolist()
@@ -132,7 +147,7 @@ class StockProcess:
 
                             # 第一欄（項目名稱）寫入 A 欄
                             cell = ws.cell(row=r_idx, column=1, value=row_data[0])
-                            cell.font = Font(size=12, bold=(r_idx == start_row))
+                            cell.font = Font(name='新細明體', size=12, bold=(r_idx == start_row))
 
                             # 年份數據從右邊開始寫入（從 L 欄開始往左）
                             year_data = row_data[1:]  # 除了第一欄以外的年份數據
@@ -141,7 +156,7 @@ class StockProcess:
                             for year_idx, value in enumerate(year_data):
                                 column_position = 12 - year_idx  # L=12, K=11, J=10...
                                 cell = ws.cell(row=r_idx, column=column_position, value=value)
-                                cell.font = Font(size=12, bold=(r_idx == start_row))
+                                cell.font = Font(name='新細明體', size=12, bold=(r_idx == start_row))
 
                         # 自動調整欄寬
                         for col in ws.columns:
@@ -382,12 +397,17 @@ class StockProcess:
             return excel_base64, '無原始資料'
 
     async def EPS_PE_MarketCap_data_write_to_excel(self, EPS_PE_MarketCap_content, stock, excel_base64):
-        """將 EPS_PE_MarketCap 數據寫入 Excel base64"""
+        """將 EPS_PE_MarketCap 數據寫入 Excel base64 - 完整格式化處理"""
         try:
             excel_binary = base64.b64decode(excel_base64)
             excel_buffer = io.BytesIO(excel_binary)
             wb = load_workbook(excel_buffer)
             ws = wb.worksheets[0]
+
+            # 清除舊資料 - 清空 EN1 到 EO1
+            for i in range(1, 5):
+                ws[f'EN{i}'].value = None
+                ws[f'EO{i}'].value = None
 
             # 處理資料
             for data in EPS_PE_MarketCap_content.get(stock, {}):
@@ -396,8 +416,21 @@ class StockProcess:
 
                 for i, (key, value) in enumerate(data.items()):
                     row = start_row + i  # 從起始行開始逐行寫入
-                    ws[f"EN{row}"] = key  # 寫入鍵到 EN 列
-                    ws[f"EO{row}"] = value  # 寫入值到 EO 列
+
+                    # 寫入鍵到 EY 列
+                    key_cell = ws[f"EN{row}"]
+                    key_cell.value = key
+                    key_cell.font = Font(size=12, bold=False)  # 統一字體設定
+
+                    # 寫入值到 EZ 列
+                    value_cell = ws[f"EO{row}"]
+                    value_cell.value = value
+                    value_cell.font = Font(size=12, bold=False)  # 統一字體設定
+
+                # 自動調整欄寬
+                for col in ws.columns:
+                    max_length = max(len(str(cell.value or '')) for cell in col)
+                    ws.column_dimensions[col[0].column_letter].width = max_length + 2
 
             # 儲存到 base64
             output_buffer = io.BytesIO()
@@ -405,7 +438,7 @@ class StockProcess:
             output_buffer.seek(0)
             modified_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
 
-            return modified_base64, f'{stock}的EPS_PE_MarketCap成功寫入及儲存成功'
+            return modified_base64, f'{stock}的EPS_PE_MarketCap成功寫入並儲存成功'
 
         except Exception as e:
             return excel_base64, f"處理 EPS_PE_MarketCap 時發生錯誤: {e}"
@@ -445,20 +478,20 @@ class StockProcess:
     def _fetch_stock_data(self, stock):
         """同步獲取股票數據"""
         # 查詢 10 年期美國國債收益率
-        tnx = yf.Ticker("^TNX")
-        rf_rate = tnx.info['previousClose'] / 100
+        # tnx = yf.Ticker("^TNX")
+        # rf_rate = tnx.info['previousClose'] / 100
 
         # 獲取股票資料
         Stock = yf.Ticker(stock)
-        beta = Stock.info['beta']
+        # beta = Stock.info['beta']
         currentPrice = Stock.info['currentPrice']
         symbol = Stock.info['symbol']
 
         return {
             'Stock': symbol,
             'CurrentPrice': currentPrice,
-            'beta': beta,
-            'rf_rate': rf_rate
+            # 'beta': beta,
+            # 'rf_rate': rf_rate
         }
 
     async def others_data(self, stock, excel_base64):
@@ -493,6 +526,8 @@ class StockProcess:
             ws = wb.worksheets[3]  # 使用第四個工作表
 
             # 假設WACC值要寫入特定位置，這裡需要根據你的Excel模板調整
+            # 清除舊資料
+            ws['C5'] = None  # 你需要根據實際Excel模板調整位置
             # 例如：假設WACC值寫入B2儲存格
             ws['C5'] = wacc_value  # 你需要根據實際Excel模板調整位置
 
@@ -509,6 +544,111 @@ class StockProcess:
 
         except Exception as e:
             return None, f"寫入 {stock} 的WACC數據時發生錯誤: {e}"
+
+    def write_TradeingView_data_to_excel(self, stock, tradingview_data, excel_base64):
+        """將TradingView數據寫入Excel"""
+        try:
+            print(f"正在處理 {stock} 的TradingView數據")
+
+            # 解碼Excel
+            excel_binary = base64.b64decode(excel_base64)
+            excel_buffer = io.BytesIO(excel_binary)
+            wb = load_workbook(excel_buffer)
+            ws = wb.worksheets[0]  # 使用第一個工作表
+
+            # 檢查數據類型
+            if tradingview_data is None:
+                print(f"{stock} 的數據為空")
+                return None, f"{stock} 的數據為空"
+
+            # 從 DataFrame 獲取數據
+            if hasattr(tradingview_data, 'columns') and hasattr(tradingview_data, 'index'):
+                # 確認這是一個 DataFrame
+
+                # 清除舊數據範圍 (可選，根據需要調整範圍)
+                for row in range(6, 10):  # 清除前10行
+                    for col in range(144, 154):  # 清除EN到EW列 (大概10列)
+                        ws.cell(row=row, column=col).value = None
+
+                # 指標名稱從EN開始，年份從EO開始 (EN = 第144列, EO = 第145列)
+                start_row = 6
+                label_col = 144  # EN列 - 指標名稱列
+                start_col = 145  # EO列 - 數據開始列
+
+                # 寫入年份標題 (第一行，從EO1開始)
+                for col_idx, year in enumerate(tradingview_data.columns):
+                    ws.cell(row=start_row, column=start_col + col_idx).value = int(year)
+
+                # 寫入數據行 (從第二行開始)
+                for row_idx, index_name in enumerate(tradingview_data.index):
+                    # 寫入行標題 (指標名稱) 到EN列
+                    ws.cell(row=start_row + row_idx + 1, column=label_col).value = index_name
+
+                    # 寫入該行的所有數據
+                    for col_idx, year in enumerate(tradingview_data.columns):
+                        value = tradingview_data.loc[index_name, year]
+
+                        # 處理不同類型的數據
+                        if value is None or (isinstance(value, str) and value.lower() == 'none'):
+                            cell_value = None
+                        elif isinstance(value, str) and ('%' in value):
+                            # 保持百分比格式
+                            cell_value = value
+                        else:
+                            try:
+                                # 嘗試轉換為數字
+                                cell_value = float(value)
+                            except (ValueError, TypeError):
+                                # 如果無法轉換，保持原始字符串
+                                cell_value = value
+
+                        ws.cell(row=start_row + row_idx + 1, column=start_col + col_idx).value = cell_value
+
+                print(f"成功將 {stock} 的數據寫入Excel，範圍: EN{start_row}:EO{start_row + len(tradingview_data.index)}")
+
+                # *** 新增：自動調整欄寬 ***
+                # 計算受影響的欄位範圍
+                affected_columns = list(range(label_col, start_col + len(tradingview_data.columns)))
+
+                for col_num in affected_columns:
+                    try:
+                        # 取得該欄位的所有儲存格
+                        column_cells = [ws.cell(row=r, column=col_num) for r in
+                                        range(1, start_row + len(tradingview_data.index) + 2)]
+
+                        # 計算最大寬度
+                        max_length = 0
+                        for cell in column_cells:
+                            if cell.value is not None:
+                                cell_length = len(str(cell.value))
+                                if cell_length > max_length:
+                                    max_length = cell_length
+
+                        # 設定欄寬 (最小寬度為8，最大寬度為50)
+                        column_width = min(max(max_length + 2, 8), 50)
+
+                        # 取得欄位字母
+                        from openpyxl.utils import get_column_letter
+                        column_letter = get_column_letter(col_num)
+                        ws.column_dimensions[column_letter].width = column_width
+
+                    except Exception as col_error:
+                        print(f"調整欄位 {col_num} 寬度時發生錯誤: {col_error}")
+                        continue
+
+            else:
+                return None, f"{stock} 的數據格式不正確，預期為DataFrame"
+
+            # 保存修改後的Excel
+            output_buffer = io.BytesIO()
+            wb.save(output_buffer)
+            output_buffer.seek(0)
+            modified_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
+
+            return modified_base64, f"成功將 {stock} 的TradingView數據寫入Excel"
+
+        except Exception as e:
+            return None, f"寫入 {stock} 的TradingView數據時發生錯誤: {e}"
 
     def write_seekingalpha_data_to_excel(self, stock, raw_revenue_growth, excel_base64):
         """將revenue_growth數據寫入Excel"""
@@ -528,10 +668,23 @@ class StockProcess:
                 revenue_10y_str = raw_revenue_growth["10Y"].replace('%', '')
 
                 try:
-                    revenue_5y = float(revenue_5y_str) / 100
-                    revenue_10y = float(revenue_10y_str) / 100
+                    if revenue_5y_str == '-':
+                        revenue_5y = None
+                    else:
+                        revenue_5y = float(revenue_5y_str) / 100
+
+                    if revenue_10y_str == '-':
+                        revenue_10y = None
+                    else:
+                        revenue_10y = float(revenue_10y_str) / 100
+
                 except ValueError:
                     return None, f"無法轉換 {stock} 的revenue數值為浮點數: 5Y={revenue_5y_str}, 10Y={revenue_10y_str}"
+
+                # 寫入對應的儲存格
+                ws['F4'] = None
+                ws['F5'] = None
+                ws['F2'] = None
 
                 # 寫入對應的儲存格
                 ws['F4'] = revenue_5y  # 5Y數值寫入F4
@@ -566,12 +719,13 @@ class StockProcess:
             wb = load_workbook(excel_buffer)
 
             ws = wb.worksheets[0]  # 選擇第一個工作表
+
             ws['EQ2'] = dic_data['Stock']
             ws['ER2'] = dic_data['CurrentPrice']
 
-            ws = wb.worksheets[3]
-            ws['C31'] = dic_data['beta']
-            ws['C36'] = dic_data['rf_rate']
+            # ws = wb.worksheets[3]
+            # ws['C31'] = dic_data['beta']
+            # ws['C36'] = dic_data['rf_rate']
 
             # 儲存到base64
             output_buffer = io.BytesIO()
