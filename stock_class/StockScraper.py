@@ -52,14 +52,16 @@ import re
 import yfinance as yf
 
 class StockScraper:
-    def __init__(self, stocks, headless=True, max_concurrent=1):
+    def __init__(self, stocks, headless=True, max_concurrent=3):
         """
         初始化爬蟲類別。
         stocks: 股票代碼的列表
         headless: 是否使用無頭模式
         max_concurrent: 同時執行的股票數量（控制併發數）
         """
-        self.stocks = stocks
+        self.stocks = stocks.get('final_stocks')
+        self.us_stocks = stocks.get('us_stocks')
+        self.non_us_stocks = stocks.get('non_us_stocks')
         self.headless = headless
         self.max_concurrent = max_concurrent
         self.browser = None
@@ -164,14 +166,22 @@ class StockScraper:
                 await asyncio.sleep(random.uniform(1, 3))
                 await page.goto(URL, wait_until='load', timeout=50000)
 
-                if await page.query_selector(
-                        'div.rounded-lg.bg-card.text-card-foreground.shadow-sm.mx-auto.flex.w-\\[500px\\].flex-col.items-center.border.drop-shadow-lg'):
-                    return f'{stock}是非美國企業，此頁面須付費！'
-                else:
-                    await page.wait_for_selector('table.w-full.caption-bottom.text-sm.table-fixed', timeout=100000)
-                    content = await page.content()
-                    dfs = pd.read_html(StringIO(content))
-                    return dfs
+                # 2025/09/23 更新新邏輯
+
+                await page.wait_for_selector('table.w-full.caption-bottom.text-sm.table-fixed', timeout=100000)
+                content = await page.content()
+                dfs = pd.read_html(StringIO(content))
+                return dfs
+
+                # 之前的邏輯
+                # if await page.query_selector(
+                #         'div.rounded-lg.bg-card.text-card-foreground.shadow-sm.mx-auto.flex.w-\\[500px\\].flex-col.items-center.border.drop-shadow-lg'):
+                #     return f'{stock}是非美國企業，此頁面須付費！'
+                # else:
+                #     await page.wait_for_selector('table.w-full.caption-bottom.text-sm.table-fixed', timeout=100000)
+                #     content = await page.content()
+                #     dfs = pd.read_html(StringIO(content))
+                #     return dfs
 
             except Exception as e:
                 attempt += 1
@@ -184,7 +194,7 @@ class StockScraper:
         await self.setup_browser()
         semaphore = asyncio.Semaphore(self.max_concurrent)
         try:
-            tasks = [self.fetch_financials_data(stock, semaphore) for stock in self.stocks]
+            tasks = [self.fetch_financials_data(stock, semaphore) for stock in self.us_stocks]
             result = await asyncio.gather(*tasks)
         finally:
             await self.cleanup()
@@ -201,7 +211,7 @@ class StockScraper:
                 try:
                     page_ratios = await context.new_page()
                     ratios = await asyncio.gather(self.get_ratios(stock, page_ratios))
-                    print({stock: ratios})
+                    # print({stock: ratios})
                     return {stock: ratios}
                 finally:
                     await context.close()
@@ -218,14 +228,21 @@ class StockScraper:
                 await asyncio.sleep(random.uniform(1, 3))
                 await page.goto(URL, wait_until='load', timeout=50000)
 
-                if await page.query_selector(
-                        'div.rounded-lg.bg-card.text-card-foreground.shadow-sm.mx-auto.flex.w-\\[500px\\].flex-col.items-center.border.drop-shadow-lg'):
-                    return f'{stock}是非美國企業，此頁面須付費！'
-                else:
-                    await page.wait_for_selector('table.w-full.caption-bottom.text-sm.table-fixed', timeout=100000)
-                    content = await page.content()
-                    dfs = pd.read_html(StringIO(content))
-                    return dfs
+                # 2025/09/23 更新新邏輯
+                await page.wait_for_selector('table.w-full.caption-bottom.text-sm.table-fixed', timeout=100000)
+                content = await page.content()
+                dfs = pd.read_html(StringIO(content))
+                return dfs
+
+                # 之前的邏輯
+                # if await page.query_selector(
+                #         'div.rounded-lg.bg-card.text-card-foreground.shadow-sm.mx-auto.flex.w-\\[500px\\].flex-col.items-center.border.drop-shadow-lg'):
+                #     return f'{stock}是非美國企業，此頁面須付費！'
+                # else:
+                #     await page.wait_for_selector('table.w-full.caption-bottom.text-sm.table-fixed', timeout=100000)
+                #     content = await page.content()
+                #     dfs = pd.read_html(StringIO(content))
+                #     return dfs
 
             except Exception as e:
                 attempt += 1
@@ -238,7 +255,7 @@ class StockScraper:
         await self.setup_browser()
         semaphore = asyncio.Semaphore(self.max_concurrent)
         try:
-            tasks = [self.fetch_ratios_data(stock, semaphore) for stock in self.stocks]
+            tasks = [self.fetch_ratios_data(stock, semaphore) for stock in self.us_stocks]
             result = await asyncio.gather(*tasks)
         finally:
             await self.cleanup()
@@ -859,10 +876,8 @@ class StockScraper:
     async def get_TradingView_html(self, stock, page, retries=3):
         """抓取特定股票的trading-view資料並處理網址證券交易所問題。"""
         url_stock_exchange = yf.Ticker(stock).info.get('fullExchangeName', None)
-        if url_stock_exchange == 'NasdaqGS':
+        if url_stock_exchange == 'NasdaqGS' or 'NasdaqGM' or 'NasdaqCM':
             url_stock_exchange = 'NASDAQ'
-        else:
-            pass
 
         URL = f'https://www.tradingview.com/symbols/{url_stock_exchange}-{stock}/financials-earnings/?earnings-period=FY&revenues-period=FY'
         attempt = 0
