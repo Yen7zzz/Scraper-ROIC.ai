@@ -196,7 +196,7 @@ class StockProcess:
             # if raw_df_financial.get(stock) == [f'{stock}是非美國企業，此頁面須付費！']:
             #     return cleaned_base64, f'Financial: {stock}是非美國企業，此頁面須付費！'
             # print(raw_df_financial)
-            if raw_df_financial == None:
+            if raw_df_financial is None:
                 return cleaned_base64, f'Financial: {stock}是非美國企業，此頁面須付費！'
 
             # 開始處理數據
@@ -291,8 +291,8 @@ class StockProcess:
                 wb.save(output_buffer)
                 output_buffer.seek(0)
                 cleaned_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
-                # print('不太可能到這裡')
-                return cleaned_base64, f"處理Financial資料時發生錯誤，已清空相關區域: {e}"
+                print(raw_df_financial)
+                return cleaned_base64, f"處理{stock}的Financial資料時發生錯誤，已清空相關區域: {e}"
             except:
                 # 如果連清除都失敗，只能返回原始版本
                 return excel_base64, f"處理Financial資料時發生嚴重錯誤: {e}"
@@ -325,7 +325,7 @@ class StockProcess:
             # print(raw_df_ratios)
 
             # 檢查是否為非美國企業錯誤訊息
-            if raw_df_ratios == None:
+            if raw_df_ratios is None:
                 return cleaned_base64, f'Ratios: {stock}是非美國企業，此頁面須付費！'
             # print('程式有到這邊')
             # 定義各類財務數據的起始位置（對應A.py的7個類別）
@@ -398,7 +398,7 @@ class StockProcess:
                         max_length = max(len(str(cell.value or '')) for cell in col)
                         ws.column_dimensions[col[0].column_letter].width = max_length + 2
 
-            print('程式有執行到這邊哦')
+            # print('程式有執行到這邊哦')
             # 儲存到base64
             output_buffer = io.BytesIO()
             wb.save(output_buffer)

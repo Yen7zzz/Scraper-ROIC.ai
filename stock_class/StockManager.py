@@ -40,16 +40,16 @@ class StockManager:
                 return False
         return True
 
-    async def process_summary(self):
-        """處理Summary數據"""
-        raw_df_summary = await self.scraper.run_summary()
-        for index, stock in enumerate(self.stocks):
-            if stock in self.excel_files:
-                modified_base64, message = await self.processor.process_df_summary(
-                    raw_df_summary[index], stock, self.excel_files[stock]
-                )
-                self.excel_files[stock] = modified_base64
-                print(f"✅ {message}")
+    # async def process_summary(self):
+    #     """處理Summary數據"""
+    #     raw_df_summary = await self.scraper.run_summary()
+    #     for index, stock in enumerate(self.stocks):
+    #         if stock in self.excel_files:
+    #             modified_base64, message = await self.processor.process_df_summary(
+    #                 raw_df_summary[index], stock, self.excel_files[stock]
+    #             )
+    #             self.excel_files[stock] = modified_base64
+    #             print(f"✅ {message}")
 
     async def process_financial(self):
         """處理Financial數據"""
@@ -97,7 +97,7 @@ class StockManager:
             # raw_df_ratios = await self.scraper.run_ratios()
             # print(raw_df_ratios)
             raw_df_ratios = None
-            for index, stock in enumerate(self.us_stocks):
+            for index, stock in enumerate(self.non_us_stocks):
                 if stock in self.excel_files:
                     modified_base64, message = await self.processor.process_df_ratios(
                         raw_df_ratios, stock, self.excel_files[stock]

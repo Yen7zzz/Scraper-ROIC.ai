@@ -52,7 +52,7 @@ import re
 import yfinance as yf
 
 class StockScraper:
-    def __init__(self, stocks, headless=True, max_concurrent=3):
+    def __init__(self, stocks, headless=True, max_concurrent=5):
         """
         初始化爬蟲類別。
         stocks: 股票代碼的列表
@@ -92,52 +92,52 @@ class StockScraper:
         if self.playwright:
             await self.playwright.stop()
 
-    async def fetch_summary_data(self, stock, semaphore):
-        """抓取單一股票的數據（summary）。"""
-        async with semaphore:
-            try:
-                context = await self.browser.new_context(
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-                    viewport={"width": 800, "height": 600},
-                )
-                try:
-                    page_summary = await context.new_page()
-                    summary = await asyncio.gather(self.get_summary(stock, page_summary))
-                    return {stock: summary}
-                finally:
-                    await context.close()
-            except Exception as e:
-                return {"stock": stock, "error": str(e)}
+    # async def fetch_summary_data(self, stock, semaphore):
+    #     """抓取單一股票的數據（summary）。"""
+    #     async with semaphore:
+    #         try:
+    #             context = await self.browser.new_context(
+    #                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+    #                 viewport={"width": 800, "height": 600},
+    #             )
+    #             try:
+    #                 page_summary = await context.new_page()
+    #                 summary = await asyncio.gather(self.get_summary(stock, page_summary))
+    #                 return {stock: summary}
+    #             finally:
+    #                 await context.close()
+    #         except Exception as e:
+    #             return {"stock": stock, "error": str(e)}
 
-    async def get_summary(self, stock, page, retries=1):
-        """抓取特定股票的摘要資料並回傳 DataFrame。"""
-        URL = f'https://www.roic.ai/quote/{stock}'
-        attempt = 0
+    # async def get_summary(self, stock, page, retries=3):
+    #     """抓取特定股票的摘要資料並回傳 DataFrame。"""
+    #     URL = f'https://www.roic.ai/quote/{stock}'
+    #     attempt = 0
+    #
+    #     while attempt < retries:
+    #         try:
+    #             await asyncio.sleep(random.uniform(1, 3))
+    #             await page.goto(URL, wait_until='load', timeout=50000)
+    #             await page.wait_for_selector('table.w-full.caption-bottom.text-sm.table-fixed', timeout=100000)
+    #             content = await page.content()
+    #             dfs = pd.read_html(StringIO(content))
+    #             return dfs
+    #         except Exception as e:
+    #             attempt += 1
+    #             if attempt == retries:
+    #                 return f"Error for {stock}: {e}"
+    #
+    #     return f"Failed to retrieve data for {stock}"
 
-        while attempt < retries:
-            try:
-                await asyncio.sleep(random.uniform(1, 3))
-                await page.goto(URL, wait_until='load', timeout=50000)
-                await page.wait_for_selector('table.w-full.caption-bottom.text-sm.table-fixed', timeout=100000)
-                content = await page.content()
-                dfs = pd.read_html(StringIO(content))
-                return dfs
-            except Exception as e:
-                attempt += 1
-                if attempt == retries:
-                    return f"Error for {stock}: {e}"
-
-        return f"Failed to retrieve data for {stock}"
-
-    async def run_summary(self):
-        await self.setup_browser()
-        semaphore = asyncio.Semaphore(self.max_concurrent)
-        try:
-            tasks = [self.fetch_summary_data(stock, semaphore) for stock in self.stocks]
-            result = await asyncio.gather(*tasks)
-        finally:
-            await self.cleanup()
-        return result
+    # async def run_summary(self):
+    #     await self.setup_browser()
+    #     semaphore = asyncio.Semaphore(self.max_concurrent)
+    #     try:
+    #         tasks = [self.fetch_summary_data(stock, semaphore) for stock in self.stocks]
+    #         result = await asyncio.gather(*tasks)
+    #     finally:
+    #         await self.cleanup()
+    #     return result
 
     async def fetch_financials_data(self, stock, semaphore):
         """抓取單一股票的數據（financials）。"""
@@ -146,6 +146,7 @@ class StockScraper:
                 context = await self.browser.new_context(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
                     viewport={"width": 800, "height": 600},
+                    java_script_enabled=True
                 )
                 try:
                     page_financials = await context.new_page()
@@ -156,7 +157,7 @@ class StockScraper:
             except Exception as e:
                 return {"stock": stock, "error": str(e)}
 
-    async def get_financials(self, stock, page, retries=1):
+    async def get_financials(self, stock, page, retries=3):
         """抓取特定股票的財務資料並回傳 DataFrame。"""
         URL = f'https://www.roic.ai/quote/{stock}/financials'
         attempt = 0
@@ -164,7 +165,7 @@ class StockScraper:
         while attempt < retries:
             try:
                 await asyncio.sleep(random.uniform(1, 3))
-                await page.goto(URL, wait_until='load', timeout=50000)
+                await page.goto(URL, wait_until='networkidle', timeout=100000) # networkidle
 
                 # 2025/09/23 更新新邏輯
 
@@ -207,6 +208,7 @@ class StockScraper:
                 context = await self.browser.new_context(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
                     viewport={"width": 800, "height": 600},
+                    java_script_enabled=True
                 )
                 try:
                     page_ratios = await context.new_page()
@@ -218,7 +220,7 @@ class StockScraper:
             except Exception as e:
                 return {"stock": stock, "error": str(e)}
 
-    async def get_ratios(self, stock, page, retries=1):
+    async def get_ratios(self, stock, page, retries=3):
         """抓取特定股票的比率資料並回傳 DataFrame。"""
         URL = f'https://www.roic.ai/quote/{stock}/ratios'
         attempt = 0
@@ -581,9 +583,12 @@ class StockScraper:
 
     async def get_seekingalpha_html(self, stock, page, retries=3):
         """抓取特定股票的摘要資料並回傳 DataFrame。"""
+        if '-' in stock:
+            stock = ''.join(['.' if char == '-' else char for char in stock])
+
         URL = f'https://seekingalpha.com/symbol/{stock}/growth'
         attempt = 0
-
+        # print(URL)
         while attempt < retries:
             try:
                 print(f"正在嘗試抓取 {stock} 的資料 (第 {attempt + 1} 次)...")
@@ -786,9 +791,12 @@ class StockScraper:
 
     async def get_wacc_html(self, stock, page, retries=3):
         """抓取特定股票的WACC資料並回傳int數值。"""
+        if '-' in stock:
+            stock = ''.join(['.' if char == '-' else char for char in stock])
+
         URL = f'https://www.gurufocus.com/term/wacc/{stock}'
         attempt = 0
-
+        # print(URL)
         while attempt < retries:
             try:
                 print(f"正在嘗試抓取 {stock} 的WACC資料 (第 {attempt + 1} 次)...")
@@ -876,12 +884,15 @@ class StockScraper:
     async def get_TradingView_html(self, stock, page, retries=3):
         """抓取特定股票的trading-view資料並處理網址證券交易所問題。"""
         url_stock_exchange = yf.Ticker(stock).info.get('fullExchangeName', None)
-        if url_stock_exchange == 'NasdaqGS' or 'NasdaqGM' or 'NasdaqCM':
+        if url_stock_exchange in ['NasdaqGS', 'NasdaqGM', 'NasdaqCM']:
             url_stock_exchange = 'NASDAQ'
+
+        if '-' in stock:
+            stock = ''.join(['.' if char == '-' else char for char in stock])
 
         URL = f'https://www.tradingview.com/symbols/{url_stock_exchange}-{stock}/financials-earnings/?earnings-period=FY&revenues-period=FY'
         attempt = 0
-
+        # print(URL)
         while attempt < retries:
             try:
                 print(f"正在嘗試抓取 {stock} 的trading-view資料 (第 {attempt + 1} 次)...")

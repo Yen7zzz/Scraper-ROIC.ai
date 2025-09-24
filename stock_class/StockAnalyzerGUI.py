@@ -199,7 +199,7 @@ class StockAnalyzerGUI:
 
         # 縮小說明文字
         help_label = tk.Label(stock_frame,
-                              text="💡 輸入股票代碼，多個代碼請用逗號分隔 (例如: NVDA, MSFT, AAPL, GOOGL)\n💡 請勿輸入非美國股票代碼",
+                              text="💡 輸入股票代碼，多個代碼請用逗號分隔 (例如: NVDA, MSFT, AAPL, GOOGL)\n💡 代碼中若包含『-』請直接輸入(例如：BRK-B)\n💡 若輸入非美國股票代碼，部分資料將有缺失！",
                               font=('Times New Roman', 12),  # 從12減少到10
                               foreground='#ffb347',
                               bg='#2d2d2d',
@@ -468,15 +468,18 @@ class StockAnalyzerGUI:
         """現代化日誌顯示"""
         timestamp = datetime.now().strftime("%H:%M:%S")
 
+        # 優先檢查是否包含 "步驟"
+        if "步驟" in message:
+            color = "#ffffff"  # 白色
         # 根據訊息類型選擇顏色
-        if "✅" in message or "成功" in message:
+        elif "✅" in message or "成功" in message:
             color = "#00ff00"  # 綠色
         elif "❌" in message or "錯誤" in message or "失敗" in message:
             color = "#ff4757"  # 紅色
         elif "⚠️" in message or "警告" in message:
             color = "#ffa502"  # 橙色
         elif "🔄" in message or "處理" in message:
-            color = "#3742fa"  # 藍色
+            color = "#37f4fa"  # 藍色
         elif "🚀" in message or "開始" in message:
             color = "#ff6b35"  # 橙紅色
         else:
@@ -731,9 +734,9 @@ class StockAnalyzerGUI:
             self.log(f"\n🎯 最終處理清單：{', '.join(final_stocks)}")
             self.log("🎯" + "=" * 80)
 
-            print(final_stocks, bool(final_stocks))
-            print(us_stocks, bool(us_stocks))
-            print(non_us_stocks, bool(non_us_stocks))
+            # print(final_stocks, bool(final_stocks))
+            # print(us_stocks, bool(us_stocks))
+            # print(non_us_stocks, bool(non_us_stocks))
             stocks = {'final_stocks': final_stocks,
                       'us_stocks': us_stocks,
                       'non_us_stocks': non_us_stocks}
@@ -851,7 +854,7 @@ class StockAnalyzerGUI:
 
             check_if_stopped()
             current_step += 1
-            self.update_progress(current_step, total_steps, "處理 EPS 成長率")
+            self.update_progress(current_step, total_steps, "處理 Trading View 資料")
             self.log("\n📈 步驟 9/10：正在處理 Trading View資料...")
 
             await manager.process_TradingView()
