@@ -5,7 +5,8 @@ import asyncio
 import os
 from datetime import datetime
 import time
-from excel_template.excel_template import EXCEL_TEMPLATE_BASE64
+from excel_template.fundamental_excel_template import Fundamental_Excel_Template_Base64
+from excel_template.option_chain_excel_template import Option_Chain_Excel_Template_Base64
 from stock_class.StockScraper import StockScraper
 from stock_class.StockProcess import StockProcess
 from stock_class.StockManager import StockManager
@@ -521,9 +522,9 @@ class StockAnalyzerGUI:
     def start_analysis(self):
         """開始分析 - 加入輸入驗證"""
         # 檢查Excel模板
-        if EXCEL_TEMPLATE_BASE64.strip() == "" or "我的模板" in EXCEL_TEMPLATE_BASE64:
+        if Fundamental_Excel_Template_Base64.strip() == "" or "我的模板" in Fundamental_Excel_Template_Base64:
             messagebox.showerror("❌ 錯誤",
-                                 "請先設定 EXCEL_TEMPLATE_BASE64 變數！\n請將Excel模板轉換為base64後貼入程式碼中。")
+                                 "請先設定 Fundamental_Excel_Template_Base64 變數！\n請將Excel模板轉換為base64後貼入程式碼中。")
             return
 
         # 獲取輸入的股票代碼

@@ -1050,3 +1050,112 @@ class StockScraper:
         finally:
             await self.cleanup()
         return result
+
+    async def fetch_barchart_data(self, stock, semaphore):
+        """抓取單一股票的數據（Barchart Volatility）"""
+        async with semaphore:
+            try:
+                context = await self.browser.new_context(
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+                    viewport={"width": 1920, "height": 1080},
+                    java_script_enabled=True,
+                )
+                try:
+                    page = await context.new_page()
+                    html_content = await self.get_barchart_html(stock, page)
+                    return {stock: html_content}
+                finally:
+                    await context.close()
+            except Exception as e:
+                return {stock: {"error": str(e)}}
+
+    async def get_barchart_html(self, stock, page, retries=3):
+        """抓取特定股票的Barchart頁面並回傳完整HTML"""
+        URL = f'https://www.barchart.com/stocks/quotes/{stock}/volatility-charts'
+        attempt = 0
+
+        while attempt < retries:
+            try:
+                print(f"正在嘗試抓取 {stock} 的Barchart頁面 (第 {attempt + 1} 次)...")
+
+                await asyncio.sleep(random.uniform(2, 5))
+                await page.goto(URL, wait_until='domcontentloaded', timeout=60000)
+
+                # 等待頁面載入
+                await asyncio.sleep(3)
+
+                # 獲取完整HTML內容
+                content = await page.content()
+
+                # print(f"✓ 成功獲取 {stock} 的HTML，長度: {len(content)}")
+                bs = BeautifulSoup(content, 'html.parser')
+
+                div = bs.find('div', {'class':'bc-datatable-toolbar bc-options-toolbar volatility'})
+                # print(div)
+                return div.text.replace('\xa0', ' ')
+                # return content
+
+            except Exception as e:
+                print(f"第 {attempt + 1} 次嘗試失敗: {e}")
+                attempt += 1
+                if attempt < retries:
+                    await asyncio.sleep(random.uniform(5, 10))
+
+        return None
+
+    async def run_barchart(self):
+        """執行Barchart數據抓取"""
+        await self.setup_browser()
+        semaphore = asyncio.Semaphore(self.max_concurrent)
+        try:
+            tasks = [self.fetch_barchart_data(stock, semaphore) for stock in self.stocks]
+            result = await asyncio.gather(*tasks)
+        finally:
+            await self.cleanup()
+        return result
+
+    async def fetch_option_chain_data(self, stock, semaphore):
+        """抓取單一股票的選擇權鏈數據"""
+        async with semaphore:
+            try:
+                # 使用 schwabdev 客戶端
+                option_data = await asyncio.to_thread(
+                    self._get_option_chain_sync, stock
+                )
+                return {stock: option_data}
+            except Exception as e:
+                return {stock: {"error": str(e)}}
+
+    def _get_option_chain_sync(self, stock):
+        """同步獲取選擇權鏈數據"""
+        import os
+        import dotenv
+        import schwabdev
+
+        # 載入環境變數
+        dotenv.load_dotenv()
+
+        # 創建客戶端
+        client = schwabdev.Client(
+            os.getenv('app_key'),
+            os.getenv('app_secret'),
+            os.getenv('callback_url')
+        )
+
+        # 獲取選擇權數據
+        response = client.option_chains(stock)
+        return response.json()
+
+    async def run_option_chains(self):
+        """批次執行選擇權鏈抓取"""
+        await self.setup_browser()  # 如果需要的話
+        semaphore = asyncio.Semaphore(self.max_concurrent)
+        try:
+            tasks = [
+                self.fetch_option_chain_data(stock, semaphore)
+                for stock in self.stocks
+            ]
+            result = await asyncio.gather(*tasks)
+        finally:
+            pass  # 選擇權API不需要清理瀏覽器
+        return result

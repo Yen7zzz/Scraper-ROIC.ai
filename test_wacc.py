@@ -6,7 +6,7 @@ import random
 import re
 from openpyxl import load_workbook
 from bs4 import BeautifulSoup
-from excel_template.excel_template import EXCEL_TEMPLATE_BASE64
+from excel_template.fundamental_excel_template import EXCEL_TEMPLATE_BASE64
 
 class StockScraper:
     def __init__(self, stocks, headless=True, max_concurrent=3):
