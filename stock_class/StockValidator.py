@@ -18,17 +18,39 @@ class StockValidator:
         self.rate_limiter = RateLimitManager(request_delay)
 
     def validate_single_stock(self, stock):
-        """驗證單一股票代碼"""
+        """驗證單一股票代碼 - 使用多重驗證策略"""
         try:
             ticker = yf.Ticker(stock)
 
-            # 先獲取歷史數據來驗證股票
-            hist = ticker.history(period="5d")
+            # 🔥 策略 1：先嘗試獲取 info（最快最穩定）
+            try:
+                info = ticker.info
+                # 檢查是否有基本的股票資訊
+                if info and ('symbol' in info or 'shortName' in info or 'longName' in info):
+                    # 有基本資訊，視為有效
+                    return True, f"✅ {stock}: 有效股票代碼"
+            except Exception as info_error:
+                # info 失敗，繼續嘗試 history
+                pass
 
-            if not hist.empty:
-                return True, f"✅ {stock}: 有效股票代碼"
-            else:
-                return False, f"❌ {stock}: 無法獲得股價資訊"
+            # 🔥 策略 2：嘗試獲取歷史數據（備用方案）
+            try:
+                hist = ticker.history(period="5d")
+                if not hist.empty:
+                    return True, f"✅ {stock}: 有效股票代碼"
+            except Exception as hist_error:
+                pass
+
+            # 🔥 策略 3：嘗試更短的歷史數據（最後手段）
+            try:
+                hist = ticker.history(period="1d")
+                if not hist.empty:
+                    return True, f"✅ {stock}: 有效股票代碼（使用 1 天數據驗證）"
+            except Exception:
+                pass
+
+            # 所有方法都失敗
+            return False, f"❌ {stock}: 無法獲得股票資訊"
 
         except Exception as e:
             return False, f"❌ {stock}: 驗證失敗 - {str(e)}"

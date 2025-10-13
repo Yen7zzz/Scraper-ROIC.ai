@@ -1,6 +1,6 @@
 """
-完整的配置管理模組 - 整合到股票分析程式 (.env 版本)
-包含正確的 OAuth 認證流程
+完整的配置管理模組 - 最終正確版
+使用 monkey patch 替換 input() 函數
 """
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
@@ -8,6 +8,9 @@ import os
 import sys
 import webbrowser
 import schwabdev
+import threading
+import queue
+import builtins
 
 
 class ConfigManager:
@@ -21,7 +24,7 @@ class ConfigManager:
             self.base_path = os.path.dirname(os.path.abspath(__file__))
 
         self.env_path = os.path.join(self.base_path, '.env')
-        self.token_path = os.path.join(self.base_path, 'token.txt')
+        self.tokens_path = os.path.join(self.base_path, 'tokens.json')
 
     def config_exists(self):
         """檢查配置檔案是否存在"""
@@ -65,7 +68,7 @@ class ConfigManager:
 
     def has_valid_token(self):
         """檢查是否有有效的 token"""
-        return os.path.exists(self.token_path)
+        return os.path.exists(self.tokens_path)
 
 
 class OAuthSetupWindow:
@@ -84,6 +87,11 @@ class OAuthSetupWindow:
         self.auth_url = None
         self.app_key = None
         self.app_secret = None
+
+        # 用於執行緒間通訊
+        self.callback_queue = queue.Queue()
+        self.result_queue = queue.Queue()
+        self.auth_thread = None
 
         self.setup_ui()
         self.center_window()
@@ -256,9 +264,9 @@ class OAuthSetupWindow:
             text="🌐 開啟瀏覽器進行認證",
             command=self.open_browser,
             font=('微軟正黑體', 11, 'bold'),
-            bg='#6c5ce7',
+            bg='#00d4aa',
             fg='white',
-            activebackground='#5f4dd1',
+            activebackground='#00b894',
             width=25,
             height=1,
             relief='flat',
@@ -397,7 +405,7 @@ class OAuthSetupWindow:
             messagebox.showerror("❌ 錯誤", f"生成授權連結失敗：\n{e}")
 
     def open_browser(self):
-        """開啟瀏覽器"""
+        """開啟瀏覽器並啟動背景認證執行緒"""
         if self.auth_url:
             webbrowser.open(self.auth_url)
             messagebox.showinfo(
@@ -408,12 +416,71 @@ class OAuthSetupWindow:
                 "2. 回到此視窗\n"
                 "3. 貼到「步驟 3」的輸入框中"
             )
+
+            # 保存配置（提前保存）
+            config_data = {
+                'app_key': self.app_key,
+                'app_secret': self.app_secret
+            }
+            self.config_manager.save_config(config_data)
+            print("✅ 配置已保存到 .env")
+
+            # 啟動背景執行緒來處理 schwabdev 認證
+            self.start_auth_thread()
+
             # 啟用回調 URL 輸入和完成按鈕
             self.callback_entry.config(state='normal')
             self.complete_btn.config(state='normal')
 
+    def start_auth_thread(self):
+        """在背景執行緒啟動 schwabdev Client - 使用 monkey patch"""
+        def auth_worker():
+            try:
+                print("🔄 背景執行緒：正在初始化 schwabdev Client...")
+
+                # 保存原始的 input 函數
+                original_input = builtins.input
+
+                # 創建自定義 input 函數
+                def custom_input(prompt=""):
+                    if prompt:
+                        print(prompt, end='', flush=True)
+                    # 從 queue 取得使用者在 GUI 貼的 URL
+                    url = self.callback_queue.get()
+                    print(url)  # 顯示在 console（模擬使用者輸入）
+                    return url
+
+                # 替換 builtins.input
+                builtins.input = custom_input
+
+                try:
+                    # 初始化 schwabdev Client
+                    client = schwabdev.Client(
+                        self.app_key,
+                        self.app_secret,
+                        tokens_file='tokens.json'
+                    )
+
+                    print("✅ schwabdev Client 初始化成功！")
+                    self.result_queue.put(('success', None))
+
+                finally:
+                    # 恢復原始的 input 函數
+                    builtins.input = original_input
+
+            except Exception as e:
+                print(f"❌ 背景執行緒錯誤: {e}")
+                import traceback
+                traceback.print_exc()
+                self.result_queue.put(('error', str(e)))
+                # 恢復原始的 input 函數
+                builtins.input = original_input
+
+        self.auth_thread = threading.Thread(target=auth_worker, daemon=True)
+        self.auth_thread.start()
+
     def complete_authentication(self):
-        """完成認證"""
+        """完成認證 - 將 URL 傳給背景執行緒"""
         returned_url = self.callback_entry.get().strip()
 
         if not returned_url:
@@ -427,37 +494,52 @@ class OAuthSetupWindow:
             return
 
         try:
-            # 保存配置
-            config_data = {
-                'app_key': self.app_key,
-                'app_secret': self.app_secret
-            }
-            self.config_manager.save_config(config_data)
+            print(f"📤 將 callback URL 傳送給背景執行緒...")
 
-            # 使用 schwabdev 完成認證
-            print("🔐 正在用授權碼換取 Token...")
-            client = schwabdev.Client(self.app_key, self.app_secret, callback_url="https://127.0.0.1")
+            # 把 URL 放入 queue，讓背景執行緒的 schwabdev 使用
+            self.callback_queue.put(returned_url)
 
-            # schwabdev 會自動處理 token 交換和保存
-            # 如果需要手動處理，可以使用 client 的內部方法
+            # 禁用按鈕，避免重複點擊
+            self.complete_btn.config(state='disabled', text="⏳ 處理中...")
+            self.callback_entry.config(state='disabled')
 
-            messagebox.showinfo(
-                "✅ 認證成功",
-                "Token 已成功獲取並保存！\n\n"
-                "程式現在可以正常使用了。"
-            )
-
-            self.config_saved = True
-            self.root.quit()
-            self.root.destroy()
+            # 啟動檢查結果的定時器
+            self.root.after(100, self.check_auth_result)
 
         except Exception as e:
-            messagebox.showerror("❌ 認證失敗",
-                f"認證過程發生錯誤：\n\n{str(e)}\n\n"
-                "請確認：\n"
-                "1. URL 是否完整複製\n"
-                "2. 授權碼是否還有效\n"
-                "3. 網路連線是否正常")
+            messagebox.showerror("❌ 錯誤", f"發生錯誤：\n{str(e)}")
+            self.complete_btn.config(state='normal', text="✅ 完成認證")
+            self.callback_entry.config(state='normal')
+
+    def check_auth_result(self):
+        """定時檢查背景執行緒的認證結果"""
+        try:
+            # 非阻塞檢查 queue
+            result = self.result_queue.get_nowait()
+
+            if result[0] == 'success':
+                messagebox.showinfo(
+                    "✅ 認證成功",
+                    "Token 已成功獲取並保存！\n\n"
+                    "程式現在可以正常使用了。"
+                )
+                self.config_saved = True
+                self.root.quit()
+                self.root.destroy()
+            else:
+                messagebox.showerror("❌ 認證失敗",
+                    f"認證過程發生錯誤：\n\n{result[1]}\n\n"
+                    "請確認：\n"
+                    "1. URL 是否完整複製\n"
+                    "2. 授權碼是否還有效（30秒內）\n"
+                    "3. 網路連線是否正常\n\n"
+                    "請點擊「開啟瀏覽器進行認證」重試。")
+                self.complete_btn.config(state='normal', text="✅ 完成認證")
+                self.callback_entry.config(state='normal')
+
+        except queue.Empty:
+            # 還沒有結果，繼續等待
+            self.root.after(100, self.check_auth_result)
 
     def cancel_setup(self):
         """取消設定"""

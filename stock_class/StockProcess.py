@@ -1012,7 +1012,7 @@ class StockProcess:
                             option_record.update(contract)
                             option_record['expDateKey'] = exp_date_key
                             option_record['strikeKey'] = strike_price
-                            option_record['optionType'] = 'CALL'  # 標記類型
+                            # option_record['optionType'] = 'CALL'  # 標記類型
                             all_options.append(option_record)
 
             # 處理 Put 選擇權
@@ -1024,7 +1024,7 @@ class StockProcess:
                             option_record.update(contract)
                             option_record['expDateKey'] = exp_date_key
                             option_record['strikeKey'] = strike_price
-                            option_record['optionType'] = 'PUT'  # 標記類型
+                            # option_record['optionType'] = 'PUT'  # 標記類型
                             all_options.append(option_record)
 
             # 轉換為DataFrame
@@ -1032,6 +1032,31 @@ class StockProcess:
 
             # 🔧 關鍵修復：將複雜數據類型轉換為字串
             df = self._convert_complex_types_to_string(df)
+
+            # ✨ 新增：重新排序欄位
+            desired_columns = [
+                'symbol', 'status', 'underlying', 'strategy', 'interval', 'isDelayed',
+                'isIndex', 'interestRate', 'underlyingPrice', 'volatility', 'daysToExpiration',
+                'dividendYield', 'numberOfContracts', 'assetMainType', 'assetSubType',
+                'isChainTruncated', 'putCall', 'description', 'exchangeName', 'bid', 'ask',
+                'last', 'mark', 'bidSize', 'askSize', 'bidAskSize', 'lastSize', 'highPrice',
+                'lowPrice', 'openPrice', 'closePrice', 'totalVolume', 'tradeTimeInLong',
+                'quoteTimeInLong', 'netChange', 'delta', 'gamma', 'theta', 'vega', 'rho',
+                'openInterest', 'timeValue', 'theoreticalOptionValue', 'theoreticalVolatility',
+                'optionDeliverablesList', 'strikePrice', 'expirationDate', 'expirationType',
+                'lastTradingDay', 'multiplier', 'settlementType', 'deliverableNote',
+                'percentChange', 'markChange', 'markPercentChange', 'intrinsicValue',
+                'extrinsicValue', 'optionRoot', 'exerciseType', 'high52Week', 'low52Week',
+                'nonStandard', 'inTheMoney', 'mini', 'pennyPilot', 'expDateKey', 'strikeKey'
+            ]
+
+            # 只保留存在於 DataFrame 中的欄位,並按照指定順序排列
+            existing_columns = [col for col in desired_columns if col in df.columns]
+            # 加入任何不在desired_columns中但存在於df的欄位
+            remaining_columns = [col for col in df.columns if col not in existing_columns]
+            final_columns = existing_columns + remaining_columns
+
+            df = df[final_columns]
 
             return df
 
@@ -1086,10 +1111,10 @@ class StockProcess:
             if sheet_name in wb.sheetnames:
                 ws = wb[sheet_name]
                 # 清除舊數據
-                wb.remove(ws)
-
-            # 創建新工作表
-            ws = wb.create_sheet(sheet_name)
+                # wb.remove(ws)
+                for row in ws.iter_rows(min_row=1, min_col=1, max_row=2000, max_col=67):
+                    for cell in row:
+                        cell.value = None
 
             # 寫入表頭
             for col_idx, column_name in enumerate(option_df.columns, 1):

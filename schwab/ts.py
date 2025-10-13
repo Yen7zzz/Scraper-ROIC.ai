@@ -16,7 +16,9 @@ logging.basicConfig(level=logging.INFO)
 
 # make a client
 client = schwabdev.Client(os.getenv('app_key'), os.getenv('app_secret'), os.getenv('callback_url'))
-option = client.option_chains('CCL').json()
+option = client.option_chains('CCL', strikeCount=1).json()
+print(option)
+
 
 def flatten_option_chain_to_excel(option_data, output_filename='option_chain_data.xlsx'):
     """
@@ -24,7 +26,7 @@ def flatten_option_chain_to_excel(option_data, output_filename='option_chain_dat
     """
     all_options = []
 
-    # 提取基本股票資訊，用於每個合約
+    # 提取基本股票資訊,用於每個合約
     base_info = {
         'symbol': option_data.get('symbol'),
         'status': option_data.get('status'),
@@ -71,6 +73,30 @@ def flatten_option_chain_to_excel(option_data, output_filename='option_chain_dat
     # 轉換為DataFrame
     df = pd.DataFrame(all_options)
 
+    # 定義想要的欄位順序
+    desired_columns = [
+        'symbol', 'status', 'underlying', 'strategy', 'interval', 'isDelayed',
+        'isIndex', 'interestRate', 'underlyingPrice', 'volatility', 'daysToExpiration',
+        'dividendYield', 'numberOfContracts', 'assetMainType', 'assetSubType',
+        'isChainTruncated', 'putCall', 'description', 'exchangeName', 'bid', 'ask',
+        'last', 'mark', 'bidSize', 'askSize', 'bidAskSize', 'lastSize', 'highPrice',
+        'lowPrice', 'openPrice', 'closePrice', 'totalVolume', 'tradeTimeInLong',
+        'quoteTimeInLong', 'netChange', 'delta', 'gamma', 'theta', 'vega', 'rho',
+        'openInterest', 'timeValue', 'theoreticalOptionValue', 'theoreticalVolatility',
+        'optionDeliverablesList', 'strikePrice', 'expirationDate', 'expirationType',
+        'lastTradingDay', 'multiplier', 'settlementType', 'deliverableNote',
+        'percentChange', 'markChange', 'markPercentChange', 'intrinsicValue',
+        'extrinsicValue', 'optionRoot', 'exerciseType', 'high52Week', 'low52Week',
+        'nonStandard', 'inTheMoney', 'mini', 'pennyPilot', 'expDateey', 'strikeKey'
+    ]
+    # 只保留存在於 DataFrame 中的欄位,並按照指定順序排列
+    existing_columns = [col for col in desired_columns if col in df.columns]
+    # 加入任何不在desired_columns中但存在於df的欄位
+    remaining_columns = [col for col in df.columns if col not in existing_columns]
+    final_columns = existing_columns + remaining_columns
+
+    df = df[final_columns]
+
     # 寫入Excel
     with pd.ExcelWriter(output_filename, engine='openpyxl') as writer:
         df.to_excel(writer, sheet_name='OptionChain', index=False)
@@ -92,14 +118,12 @@ def flatten_option_chain_to_excel(option_data, output_filename='option_chain_dat
     print(f"數據已寫入 {output_filename}")
     print(f"總共 {len(df)} 筆選擇權合約")
     print(f"欄位數量: {len(df.columns)}")
-    print("\n前幾個欄位名稱:")
-    for i, col in enumerate(df.columns[:20]):
-        print(f"{i + 1}: {col}")
-    if len(df.columns) > 20:
-        print("...")
+    print("\n欄位順序:")
+    for i, col in enumerate(df.columns, 1):
+        print(f"{i}: {col}")
 
     return df
 
+
 # 使用方式
-# 假設你的選擇權數據存在變數 option 中
 df = flatten_option_chain_to_excel(option, 'CCL_option_chain.xlsx')
