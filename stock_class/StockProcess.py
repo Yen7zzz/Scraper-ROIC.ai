@@ -49,7 +49,7 @@ class StockProcess:
             wb = load_workbook(excel_buffer)
             ws = wb.worksheets[0]
 
-            # 清除舊資料
+            # 清除舊資料=
             for row in ws.iter_rows(min_row=1, min_col=1, max_row=30, max_col=12):
                 for cell in row:
                     cell.value = None

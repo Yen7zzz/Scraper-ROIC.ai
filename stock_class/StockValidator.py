@@ -152,7 +152,7 @@ class StockValidator:
                     error_msg = f"❌ {stock}: 國籍檢查發生錯誤 - {str(e)}"
                     if log_callback:
                         log_callback(error_msg)
-                    # 發生錯誤時，保守處理為非美國股票
+                    # 發生錯誤時，保守處理為非美國股票=
                     self.non_us_stocks.append(stock)
                     self.stock_countries[stock] = "Unknown"
 

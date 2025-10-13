@@ -92,53 +92,6 @@ class StockScraper:
         if self.playwright:
             await self.playwright.stop()
 
-    # async def fetch_summary_data(self, stock, semaphore):
-    #     """抓取單一股票的數據（summary）。"""
-    #     async with semaphore:
-    #         try:
-    #             context = await self.browser.new_context(
-    #                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-    #                 viewport={"width": 800, "height": 600},
-    #             )
-    #             try:
-    #                 page_summary = await context.new_page()
-    #                 summary = await asyncio.gather(self.get_summary(stock, page_summary))
-    #                 return {stock: summary}
-    #             finally:
-    #                 await context.close()
-    #         except Exception as e:
-    #             return {"stock": stock, "error": str(e)}
-
-    # async def get_summary(self, stock, page, retries=3):
-    #     """抓取特定股票的摘要資料並回傳 DataFrame。"""
-    #     URL = f'https://www.roic.ai/quote/{stock}'
-    #     attempt = 0
-    #
-    #     while attempt < retries:
-    #         try:
-    #             await asyncio.sleep(random.uniform(1, 3))
-    #             await page.goto(URL, wait_until='load', timeout=50000)
-    #             await page.wait_for_selector('table.w-full.caption-bottom.text-sm.table-fixed', timeout=100000)
-    #             content = await page.content()
-    #             dfs = pd.read_html(StringIO(content))
-    #             return dfs
-    #         except Exception as e:
-    #             attempt += 1
-    #             if attempt == retries:
-    #                 return f"Error for {stock}: {e}"
-    #
-    #     return f"Failed to retrieve data for {stock}"
-
-    # async def run_summary(self):
-    #     await self.setup_browser()
-    #     semaphore = asyncio.Semaphore(self.max_concurrent)
-    #     try:
-    #         tasks = [self.fetch_summary_data(stock, semaphore) for stock in self.stocks]
-    #         result = await asyncio.gather(*tasks)
-    #     finally:
-    #         await self.cleanup()
-    #     return result
-
     async def fetch_financials_data(self, stock, semaphore):
         """抓取單一股票的數據（financials）。"""
         async with semaphore:

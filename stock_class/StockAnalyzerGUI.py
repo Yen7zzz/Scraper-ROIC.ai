@@ -13,7 +13,7 @@ from stock_class.StockManager import StockManager
 from stock_class.StockValidator import StockValidator
 
 
-# ===== GUI 部分 =====
+# ====== GUI 部分 ======
 class StockAnalyzerGUI:
     def __init__(self):
         self.root = tk.Tk()

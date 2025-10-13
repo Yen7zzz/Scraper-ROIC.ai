@@ -23,7 +23,7 @@ class StockManager:
 
         self.max_concurrent = max_concurrent
 
-        # 使用共享的速率限制管理器
+        # 使用共享的速率限制管理器=
         if hasattr(processor, 'rate_limiter'):
             self.rate_limiter = processor.rate_limiter
         else:

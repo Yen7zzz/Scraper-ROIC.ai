@@ -573,7 +573,7 @@ def check_and_setup_config():
             print("✅ 已載入現有配置和 Token")
             return config, True
 
-    # 需要重新設定
+    # 需要重新設定=
     if not config_manager.config_exists():
         print("⚙️ 首次運行，啟動配置設定...")
     else:
