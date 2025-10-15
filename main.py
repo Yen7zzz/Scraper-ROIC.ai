@@ -13,7 +13,7 @@ def main():
 
     # 配置已完成，啟動主程式
     print("🚀 啟動股票分析系統...")
-    app = StockAnalyzerGUI()
+    app = StockAnalyzerGUI(config)  # 👈 傳入 config
     app.run()
 
 

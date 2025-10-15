@@ -52,7 +52,7 @@ import re
 import yfinance as yf
 
 class StockScraper:
-    def __init__(self, stocks, headless=True, max_concurrent=5):
+    def __init__(self, stocks, config=None, headless=True, max_concurrent=5):
         """
         初始化爬蟲類別。
         stocks: 股票代碼的列表
@@ -62,10 +62,32 @@ class StockScraper:
         self.stocks = stocks.get('final_stocks')
         self.us_stocks = stocks.get('us_stocks')
         self.non_us_stocks = stocks.get('non_us_stocks')
+        self.config = config
         self.headless = headless
         self.max_concurrent = max_concurrent
         self.browser = None
         self.playwright = None
+        # 驗證 Schwab API 配置
+        self._validate_schwab_config()
+
+    def _validate_schwab_config(self):
+        """驗證 Schwab API 配置是否完整"""
+        if self.config is None:
+            print("⚠️ 警告：未提供 Schwab API 配置")
+            print("選擇權鏈功能將無法使用")
+            self.schwab_available = False
+            return
+
+        required_keys = ['app_key', 'app_secret']
+        missing_keys = [key for key in required_keys if not self.config.get(key)]
+
+        if missing_keys:
+            print(f"⚠️ 警告：Schwab API 配置不完整，缺少：{', '.join(missing_keys)}")
+            print("選擇權鏈功能將無法使用")
+            self.schwab_available = False
+        else:
+            print("✓ Schwab API 配置已載入")
+            self.schwab_available = True
 
     async def setup_browser(self):
         """設定瀏覽器環境。"""
@@ -1071,6 +1093,10 @@ class StockScraper:
         """抓取單一股票的選擇權鏈數據"""
         async with semaphore:
             try:
+                # 檢查 Schwab API 是否可用
+                if not self.schwab_available:
+                    return {stock: {"error": "Schwab API 配置未完整設定"}}
+
                 # 使用 schwabdev 客戶端
                 option_data = await asyncio.to_thread(
                     self._get_option_chain_sync, stock
@@ -1080,19 +1106,61 @@ class StockScraper:
                 return {stock: {"error": str(e)}}
 
     def _get_option_chain_sync(self, stock):
-        """同步獲取選擇權鏈數據"""
-        import os
-        import dotenv
+        """同步獲取選擇權鏈數據 - 使用傳入的配置"""
         import schwabdev
+        import os
+        import sys
 
-        # 載入環境變數
-        dotenv.load_dotenv()
+        # 檢查配置是否可用
+        if not self.schwab_available or not self.config:
+            raise ValueError(
+                "Schwab API 配置未設定或不完整。\n"
+                "請確認已完成 OAuth 認證流程。"
+            )
+
+        # 從配置中讀取憑證
+        app_key = self.config.get('app_key')
+        app_secret = self.config.get('app_secret')
+        callback_url = self.config.get('callback_url', 'https://127.0.0.1')
+
+        # 驗證必要參數
+        if not app_key or not app_secret:
+            raise ValueError(
+                "Schwab API 憑證缺失。\n"
+                f"app_key: {'已設定' if app_key else '❌ 未設定'}\n"
+                f"app_secret: {'已設定' if app_secret else '❌ 未設定'}"
+            )
+
+        # 🔥 關鍵修改：計算 tokens.json 的完整路徑到 schwab/ 資料夾
+        if getattr(sys, 'frozen', False):
+            # 打包後的執行檔
+            base_path = os.path.dirname(sys.executable)
+            tokens_folder = os.path.join(base_path, 'schwab')
+        else:
+            # 開發環境
+            # StockScraper.py 位於: pythonProject1/stock_class/StockScraper.py
+            current_file = os.path.abspath(__file__)
+            project_root = os.path.dirname(os.path.dirname(current_file))  # pythonProject1/
+            tokens_folder = os.path.join(project_root, 'schwab')  # pythonProject1/schwab/
+
+        tokens_file_path = os.path.join(tokens_folder, 'tokens.json')
+
+        print(f"🔐 使用 Schwab API 獲取 {stock} 的選擇權數據...")
+        print(f"📁 Token 位置: {tokens_file_path}")
+
+        # 檢查 tokens.json 是否存在
+        if not os.path.exists(tokens_file_path):
+            raise FileNotFoundError(
+                f"找不到 Token 檔案: {tokens_file_path}\n"
+                "請先完成 OAuth 認證流程。"
+            )
 
         # 創建客戶端
         client = schwabdev.Client(
-            os.getenv('app_key'),
-            os.getenv('app_secret'),
-            os.getenv('callback_url')
+            app_key,
+            app_secret,
+            callback_url,
+            tokens_file=tokens_file_path  # 👈 使用完整路徑
         )
 
         # 獲取選擇權數據

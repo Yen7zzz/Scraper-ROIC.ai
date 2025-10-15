@@ -2,6 +2,7 @@
 完整的配置管理模組 - 最終正確版
 使用 monkey patch 替換 input() 函數
 """
+import webbrowser
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import os
@@ -434,47 +435,64 @@ class OAuthSetupWindow:
 
     def start_auth_thread(self):
         """在背景執行緒啟動 schwabdev Client - 使用 monkey patch"""
+
         def auth_worker():
             try:
                 print("🔄 背景執行緒：正在初始化 schwabdev Client...")
 
-                # 保存原始的 input 函數
+                # 保存原始的 input 和 webbrowser.open 函數
                 original_input = builtins.input
+                original_webbrowser_open = webbrowser.open  # 👈 新增
 
                 # 創建自定義 input 函數
                 def custom_input(prompt=""):
                     if prompt:
                         print(prompt, end='', flush=True)
-                    # 從 queue 取得使用者在 GUI 貼的 URL
                     url = self.callback_queue.get()
-                    print(url)  # 顯示在 console（模擬使用者輸入）
+                    print(url)
                     return url
 
-                # 替換 builtins.input
+                # 👇 新增：禁用 webbrowser.open（因為已經手動開啟過了）
+                def disabled_webbrowser_open(url, new=0, autoraise=True):
+                    print(f"🚫 已禁用自動開啟瀏覽器（URL: {url[:50]}...）")
+                    return True  # 假裝成功
+
+                # 替換 builtins.input 和 webbrowser.open
                 builtins.input = custom_input
+                webbrowser.open = disabled_webbrowser_open  # 👈 新增
 
                 try:
+                    # 🔥 修改：使用完整路徑指向 schwab/ 資料夾
+                    tokens_file_path = os.path.join(
+                        self.config_manager.base_path,
+                        'tokens.json'
+                    )
+
+                    print(f"📁 Token 將保存至: {tokens_file_path}")
+
                     # 初始化 schwabdev Client
                     client = schwabdev.Client(
                         self.app_key,
                         self.app_secret,
-                        tokens_file='tokens.json'
+                        tokens_file=tokens_file_path  # 👈 使用完整路徑
                     )
 
                     print("✅ schwabdev Client 初始化成功！")
                     self.result_queue.put(('success', None))
 
                 finally:
-                    # 恢復原始的 input 函數
+                    # 恢復原始函數
                     builtins.input = original_input
+                    webbrowser.open = original_webbrowser_open  # 👈 新增
 
             except Exception as e:
                 print(f"❌ 背景執行緒錯誤: {e}")
                 import traceback
                 traceback.print_exc()
                 self.result_queue.put(('error', str(e)))
-                # 恢復原始的 input 函數
+                # 確保恢復原始函數
                 builtins.input = original_input
+                webbrowser.open = original_webbrowser_open  # 👈 新增
 
         self.auth_thread = threading.Thread(target=auth_worker, daemon=True)
         self.auth_thread.start()

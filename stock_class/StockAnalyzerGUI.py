@@ -15,12 +15,15 @@ from stock_class.StockValidator import StockValidator
 
 # ====== GUI 部分 ======
 class StockAnalyzerGUI:
-    def __init__(self):
+    def __init__(self, config=None):
         self.root = tk.Tk()
         self.root.title("股票爬蟲程式 v2.1")
         self.root.geometry("1400x1000")
         self.root.configure(bg='#1a1a1a')  # 深色背景
         self.root.minsize(1200, 900)
+
+        # 保存配置
+        self.config = config  # 👈 儲存配置
 
         # 設定樣式
         self.style = ttk.Style()
@@ -910,7 +913,7 @@ class StockAnalyzerGUI:
                 # 創建分析物件
                 self.update_status("初始化股票分析系統")
                 self.log("🔧 正在初始化股票爬蟲系統...")
-                scraper = StockScraper(stocks=stocks_dict, max_concurrent=3)
+                scraper = StockScraper(stocks=stocks_dict, config=self.config, max_concurrent=3)
                 processor = StockProcess(max_concurrent=2)
                 manager = StockManager(scraper=scraper, processor=processor,
                                        stocks=stocks_dict, validator=validator, max_concurrent=3)
@@ -1014,7 +1017,7 @@ class StockAnalyzerGUI:
                 if not do_stock_analysis:
                     self.update_status("初始化選擇權分析系統")
                     self.log("🔧 正在初始化選擇權爬蟲系統...")
-                    scraper = StockScraper(stocks=stocks_dict, max_concurrent=3)
+                    scraper = StockScraper(stocks=stocks_dict, config=self.config, max_concurrent=3)
                     processor = StockProcess(max_concurrent=2)
                     manager = StockManager(scraper=scraper, processor=processor,
                                            stocks=stocks_dict, validator=validator, max_concurrent=3)

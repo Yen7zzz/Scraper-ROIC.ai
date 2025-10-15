@@ -1030,8 +1030,23 @@ class StockProcess:
             # 轉換為DataFrame
             df = pd.DataFrame(all_options)
 
-            # 🔧 關鍵修復：將複雜數據類型轉換為字串
+            # 關鍵修復：將複雜數據類型轉換為字串
             df = self._convert_complex_types_to_string(df)
+
+            # 計算 Bid-Ask Spread
+            df = self._calculate_bid_ask_spread(df)
+
+            # 計算 Bid-Ask Score
+            df = self._calculate_bid_ask_score(df)
+
+            # 計算 Volume Score
+            df = self._calculate_volume_score(df)  # 新增
+
+            # 計算 OI Score
+            df = self._calculate_oi_score(df)  # 新增
+
+            # 計算 Liquidity Score
+            df = self._calculate_liquidity_score(df)  # 新增
 
             # ✨ 新增：重新排序欄位
             desired_columns = [
@@ -1047,7 +1062,8 @@ class StockProcess:
                 'lastTradingDay', 'multiplier', 'settlementType', 'deliverableNote',
                 'percentChange', 'markChange', 'markPercentChange', 'intrinsicValue',
                 'extrinsicValue', 'optionRoot', 'exerciseType', 'high52Week', 'low52Week',
-                'nonStandard', 'inTheMoney', 'mini', 'pennyPilot', 'expDateKey', 'strikeKey'
+                'nonStandard', 'inTheMoney', 'mini', 'pennyPilot', 'expDateKey', 'strikeKey',
+                'Bid-Ask Spread', 'Bid-Ask Score', 'Volume Score', 'OI Score', 'Liquidity Score'
             ]
 
             # 只保留存在於 DataFrame 中的欄位,並按照指定順序排列
@@ -1065,6 +1081,414 @@ class StockProcess:
             import traceback
             traceback.print_exc()
             return None
+
+    def _calculate_bid_ask_spread(self, df):
+        """
+        計算 Bid-Ask Spread（買賣價差比例）
+        公式：=ABS(bid - ask) / ((bid + ask) / 2)
+
+        參數:
+            df: DataFrame，必須包含 'bid' 和 'ask' 欄位
+
+        返回:
+            DataFrame，新增 'Bid-Ask Spread' 欄位
+        """
+        try:
+            # 確保 bid 和 ask 欄位存在
+            if 'bid' not in df.columns or 'ask' not in df.columns:
+                print("⚠️ 警告：缺少 bid 或 ask 欄位，無法計算 Bid-Ask Spread")
+                df['Bid-Ask Spread'] = None
+                return df
+
+            # 將 bid 和 ask 轉換為數值型態（處理可能的字串或 None）
+            df['bid'] = pd.to_numeric(df['bid'], errors='coerce')
+            df['ask'] = pd.to_numeric(df['ask'], errors='coerce')
+
+            # 計算 Bid-Ask Spread
+            # 公式：|bid - ask| / ((bid + ask) / 2)
+            def calculate_spread(row):
+                bid = row['bid']
+                ask = row['ask']
+
+                # 檢查數據有效性
+                if pd.isna(bid) or pd.isna(ask):
+                    return None
+
+                # 避免除以零
+                if bid + ask == 0:
+                    return None
+
+                # 計算價差比例
+                spread = abs(bid - ask) / ((bid + ask) / 2)
+
+                # 四捨五入到 4 位小數
+                return round(spread, 4)
+
+            df['Bid-Ask Spread'] = df.apply(calculate_spread, axis=1)
+
+            # 統計資訊
+            valid_spreads = df['Bid-Ask Spread'].dropna()
+            if len(valid_spreads) > 0:
+                print(f"✓ Bid-Ask Spread 計算完成：{len(valid_spreads)} 筆有效數據")
+                print(f"  平均價差: {valid_spreads.mean():.4f}")
+                print(f"  最小價差: {valid_spreads.min():.4f}")
+                print(f"  最大價差: {valid_spreads.max():.4f}")
+            else:
+                print("⚠️ 警告：沒有有效的 Bid-Ask Spread 數據")
+
+            return df
+
+        except Exception as e:
+            print(f"❌ 計算 Bid-Ask Spread 時發生錯誤: {e}")
+            df['Bid-Ask Spread'] = None
+            return df
+
+    def _calculate_bid_ask_score(self, df):
+        """
+        計算 Bid-Ask Score（標準化分數，0-1之間）
+        公式：=1 - MIN(1, Spread / PERCENTILE_95)
+
+        原始 Excel 公式：
+        =1 - MIN(1, BP2 / PERCENTILE.INC(FILTER($BP:$BP,ISNUMBER($BP:$BP)),0.95))
+
+        參數:
+            df: DataFrame，必須包含 'Bid-Ask Spread' 欄位
+
+        返回:
+            DataFrame，新增 'Bid-Ask Score' 欄位
+        """
+        try:
+            # 確保 Bid-Ask Spread 欄位存在
+            if 'Bid-Ask Spread' not in df.columns:
+                print("⚠️ 警告：缺少 Bid-Ask Spread 欄位，無法計算 Bid-Ask Score")
+                df['Bid-Ask Score'] = None
+                return df
+
+            # 過濾出有效的 Spread 數據（非空值且為數字）
+            valid_spreads = df['Bid-Ask Spread'].dropna()
+
+            if len(valid_spreads) == 0:
+                print("⚠️ 警告：沒有有效的 Bid-Ask Spread，無法計算 Score")
+                df['Bid-Ask Score'] = None
+                return df
+
+            # 計算 95th percentile（第95百分位數）
+            percentile_95 = valid_spreads.quantile(0.95)
+
+            print(f"✓ Bid-Ask Score 基準（95th percentile）: {percentile_95:.4f}")
+
+            # 計算 Bid-Ask Score
+            def calculate_score(spread):
+                # 如果 spread 為空值，返回 None
+                if pd.isna(spread):
+                    return None
+
+                # 避免除以零
+                if percentile_95 == 0:
+                    return 1.0  # 如果基準為0，所有分數都是完美的
+
+                # 公式：1 - MIN(1, spread / percentile_95)
+                normalized_spread = spread / percentile_95
+                score = 1 - min(1, normalized_spread)
+
+                # 確保分數在 0-1 之間
+                score = max(0, min(1, score))
+
+                # 四捨五入到 4 位小數
+                return round(score, 4)
+
+            df['Bid-Ask Score'] = df['Bid-Ask Spread'].apply(calculate_score)
+
+            # 統計資訊
+            valid_scores = df['Bid-Ask Score'].dropna()
+            if len(valid_scores) > 0:
+                print(f"✓ Bid-Ask Score 計算完成：{len(valid_scores)} 筆有效數據")
+                print(f"  平均分數: {valid_scores.mean():.4f}")
+                print(f"  最小分數: {valid_scores.min():.4f}")
+                print(f"  最大分數: {valid_scores.max():.4f}")
+
+                # 分數分布統計
+                excellent = (valid_scores >= 0.9).sum()
+                good = ((valid_scores >= 0.7) & (valid_scores < 0.9)).sum()
+                fair = ((valid_scores >= 0.5) & (valid_scores < 0.7)).sum()
+                poor = (valid_scores < 0.5).sum()
+
+                print(f"  分數分布：")
+                print(f"    優秀 (≥0.9): {excellent} 筆")
+                print(f"    良好 (0.7-0.9): {good} 筆")
+                print(f"    普通 (0.5-0.7): {fair} 筆")
+                print(f"    較差 (<0.5): {poor} 筆")
+            else:
+                print("⚠️ 警告：沒有有效的 Bid-Ask Score 數據")
+
+            return df
+
+        except Exception as e:
+            print(f"❌ 計算 Bid-Ask Score 時發生錯誤: {e}")
+            import traceback
+            traceback.print_exc()
+            df['Bid-Ask Score'] = None
+            return df
+
+    def _calculate_volume_score(self, df):
+        """
+        計算 Volume Score（成交量分數，對數標準化）
+        公式：=IF(volume=0, 0, LN(1+volume) / LN(1+PERCENTILE_95))
+
+        原始 Excel 公式：
+        =IF(AF2=0,0, LN(1+AF2) / LN(1+PERCENTILE.INC(FILTER($AF:$AF,ISNUMBER($AF:$AF)),0.95)))
+
+        參數:
+            df: DataFrame，必須包含 'totalVolume' 欄位
+
+        返回:
+            DataFrame，新增 'Volume Score' 欄位
+        """
+        try:
+            import numpy as np
+
+            # 確認欄位存在
+            if 'totalVolume' not in df.columns:
+                print("⚠️ 警告：缺少 totalVolume 欄位，無法計算 Volume Score")
+                df['Volume Score'] = None
+                return df
+
+            # 轉換為數值型態
+            df['totalVolume'] = pd.to_numeric(df['totalVolume'], errors='coerce')
+
+            # 過濾有效數據（>0的數值）
+            valid_volumes = df['totalVolume'].dropna()
+            valid_volumes = valid_volumes[valid_volumes > 0]
+
+            if len(valid_volumes) == 0:
+                print("⚠️ 警告：沒有有效的成交量數據，無法計算 Volume Score")
+                df['Volume Score'] = 0
+                return df
+
+            # 計算第95百分位數
+            percentile_95 = valid_volumes.quantile(0.95)
+
+            print(f"✓ Volume Score 基準（95th percentile）: {percentile_95:,.0f}")
+
+            # 計算分數
+            def calculate_volume_score(volume):
+                # 處理空值或零
+                if pd.isna(volume) or volume <= 0:
+                    return 0
+
+                # 避免 log(1) = 0 導致除以零
+                denominator = np.log(1 + percentile_95)
+                if denominator == 0:
+                    return 0
+
+                # 公式：LN(1 + volume) / LN(1 + percentile_95)
+                score = np.log(1 + volume) / denominator
+
+                # 四捨五入到 4 位小數
+                return round(score, 4)
+
+            df['Volume Score'] = df['totalVolume'].apply(calculate_volume_score)
+
+            # 統計資訊
+            valid_scores = df['Volume Score'][df['Volume Score'] > 0]
+            if len(valid_scores) > 0:
+                print(f"✓ Volume Score 計算完成：{len(valid_scores)} 筆有效數據")
+                print(f"  平均分數: {valid_scores.mean():.4f}")
+                print(f"  最小分數: {valid_scores.min():.4f}")
+                print(f"  最大分數: {valid_scores.max():.4f}")
+
+                # 分數分布
+                high = (valid_scores >= 0.8).sum()
+                medium = ((valid_scores >= 0.5) & (valid_scores < 0.8)).sum()
+                low = (valid_scores < 0.5).sum()
+
+                print(f"  分數分布：高(≥0.8): {high}, 中(0.5-0.8): {medium}, 低(<0.5): {low}")
+
+            return df
+
+        except Exception as e:
+            print(f"❌ 計算 Volume Score 時發生錯誤: {e}")
+            import traceback
+            traceback.print_exc()
+            df['Volume Score'] = 0
+            return df
+
+    def _calculate_oi_score(self, df):
+        """
+        計算 OI Score（未平倉量分數，對數標準化）
+        公式：=IF(openInterest=0, 0, LN(1+openInterest) / LN(1+PERCENTILE_95))
+
+        原始 Excel 公式：
+        =IF(AO2=0,0, LN(1+AO2) / LN(1+PERCENTILE.INC(FILTER($AO:$AO,ISNUMBER($AO:$AO)),0.95)))
+
+        參數:
+            df: DataFrame，必須包含 'openInterest' 欄位
+
+        返回:
+            DataFrame，新增 'OI Score' 欄位
+        """
+        try:
+            import numpy as np
+
+            # 確認欄位存在
+            if 'openInterest' not in df.columns:
+                print("⚠️ 警告：缺少 openInterest 欄位，無法計算 OI Score")
+                df['OI Score'] = None
+                return df
+
+            # 轉換為數值型態
+            df['openInterest'] = pd.to_numeric(df['openInterest'], errors='coerce')
+
+            # 過濾有效數據（>0的數值）
+            valid_oi = df['openInterest'].dropna()
+            valid_oi = valid_oi[valid_oi > 0]
+
+            if len(valid_oi) == 0:
+                print("⚠️ 警告：沒有有效的未平倉量數據，無法計算 OI Score")
+                df['OI Score'] = 0
+                return df
+
+            # 計算第95百分位數
+            percentile_95 = valid_oi.quantile(0.95)
+
+            print(f"✓ OI Score 基準（95th percentile）: {percentile_95:,.0f}")
+
+            # 計算分數
+            def calculate_oi_score(oi):
+                # 處理空值或零
+                if pd.isna(oi) or oi <= 0:
+                    return 0
+
+                # 避免 log(1) = 0 導致除以零
+                denominator = np.log(1 + percentile_95)
+                if denominator == 0:
+                    return 0
+
+                # 公式：LN(1 + openInterest) / LN(1 + percentile_95)
+                score = np.log(1 + oi) / denominator
+
+                # 四捨五入到 4 位小數
+                return round(score, 4)
+
+            df['OI Score'] = df['openInterest'].apply(calculate_oi_score)
+
+            # 統計資訊
+            valid_scores = df['OI Score'][df['OI Score'] > 0]
+            if len(valid_scores) > 0:
+                print(f"✓ OI Score 計算完成：{len(valid_scores)} 筆有效數據")
+                print(f"  平均分數: {valid_scores.mean():.4f}")
+                print(f"  最小分數: {valid_scores.min():.4f}")
+                print(f"  最大分數: {valid_scores.max():.4f}")
+
+                # 分數分布
+                high = (valid_scores >= 0.8).sum()
+                medium = ((valid_scores >= 0.5) & (valid_scores < 0.8)).sum()
+                low = (valid_scores < 0.5).sum()
+
+                print(f"  分數分布：高(≥0.8): {high}, 中(0.5-0.8): {medium}, 低(<0.5): {low}")
+
+            return df
+
+        except Exception as e:
+            print(f"❌ 計算 OI Score 時發生錯誤: {e}")
+            import traceback
+            traceback.print_exc()
+            df['OI Score'] = 0
+            return df
+
+    def _calculate_liquidity_score(self, df):
+        """
+        計算 Liquidity Score（綜合流動性分數）
+        公式：= 0.4 * Bid-Ask Score + 0.3 * Volume Score + 0.3 * OI Score
+
+        權重說明：
+        - Bid-Ask Score (40%)：價差最重要，直接影響交易成本
+        - Volume Score (30%)：成交量代表市場活躍度
+        - OI Score (30%)：未平倉量代表市場深度
+
+        參數:
+            df: DataFrame，必須包含 'Bid-Ask Score', 'Volume Score', 'OI Score'
+
+        返回:
+            DataFrame，新增 'Liquidity Score' 欄位
+        """
+        try:
+            # 確認必要欄位存在
+            required_columns = ['Bid-Ask Score', 'Volume Score', 'OI Score']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+
+            if missing_columns:
+                print(f"⚠️ 警告：缺少必要欄位 {missing_columns}，無法計算 Liquidity Score")
+                df['Liquidity Score'] = None
+                return df
+
+            # 定義權重
+            WEIGHT_BID_ASK = 0.4
+            WEIGHT_VOLUME = 0.3
+            WEIGHT_OI = 0.3
+
+            # 計算綜合分數
+            def calculate_liquidity(row):
+                bid_ask_score = row['Bid-Ask Score']
+                volume_score = row['Volume Score']
+                oi_score = row['OI Score']
+
+                # 檢查是否所有分數都有效
+                # 如果任何一個是 None 或 NaN，返回 None
+                if pd.isna(bid_ask_score):
+                    bid_ask_score = 0
+                if pd.isna(volume_score):
+                    volume_score = 0
+                if pd.isna(oi_score):
+                    oi_score = 0
+
+                # 加權平均
+                liquidity = (
+                        WEIGHT_BID_ASK * bid_ask_score +
+                        WEIGHT_VOLUME * volume_score +
+                        WEIGHT_OI * oi_score
+                )
+
+                # 確保分數在 0-1 之間
+                liquidity = max(0, min(1, liquidity))
+
+                # 四捨五入到 4 位小數
+                return round(liquidity, 4)
+
+            df['Liquidity Score'] = df.apply(calculate_liquidity, axis=1)
+
+            # 統計資訊
+            valid_scores = df['Liquidity Score'].dropna()
+            if len(valid_scores) > 0:
+                print(f"✓ Liquidity Score 計算完成：{len(valid_scores)} 筆數據")
+                print(f"  平均分數: {valid_scores.mean():.4f}")
+                print(f"  最小分數: {valid_scores.min():.4f}")
+                print(f"  最大分數: {valid_scores.max():.4f}")
+
+                # 流動性等級分布
+                excellent = (valid_scores >= 0.8).sum()
+                good = ((valid_scores >= 0.6) & (valid_scores < 0.8)).sum()
+                fair = ((valid_scores >= 0.4) & (valid_scores < 0.6)).sum()
+                poor = (valid_scores < 0.4).sum()
+
+                print(f"  流動性等級分布：")
+                print(f"    🟢 優秀 (≥0.8): {excellent} 筆 ({excellent / len(valid_scores) * 100:.1f}%)")
+                print(f"    🔵 良好 (0.6-0.8): {good} 筆 ({good / len(valid_scores) * 100:.1f}%)")
+                print(f"    🟡 普通 (0.4-0.6): {fair} 筆 ({fair / len(valid_scores) * 100:.1f}%)")
+                print(f"    🔴 較差 (<0.4): {poor} 筆 ({poor / len(valid_scores) * 100:.1f}%)")
+
+                # 推薦交易的合約數量
+                tradeable = (valid_scores >= 0.6).sum()
+                print(f"  💡 建議交易合約：{tradeable} 筆（流動性≥0.6）")
+
+            return df
+
+        except Exception as e:
+            print(f"❌ 計算 Liquidity Score 時發生錯誤: {e}")
+            import traceback
+            traceback.print_exc()
+            df['Liquidity Score'] = None
+            return df
 
     def _convert_complex_types_to_string(self, df):
         """
@@ -1112,7 +1536,7 @@ class StockProcess:
                 ws = wb[sheet_name]
                 # 清除舊數據
                 # wb.remove(ws)
-                for row in ws.iter_rows(min_row=1, min_col=1, max_row=2000, max_col=67):
+                for row in ws.iter_rows(min_row=1, min_col=1, max_row=2000, max_col=75):
                     for cell in row:
                         cell.value = None
 
