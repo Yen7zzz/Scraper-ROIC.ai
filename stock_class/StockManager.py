@@ -276,7 +276,6 @@ class StockManager:
                     if barchart_text is None:
                         print(f"❌ {stock} 的Barchart數據為None")
 
-    # 在 StockManager 類別中新增
     async def process_option_chains(self):
         """處理選擇權鏈數據（整合到選擇權Excel）"""
         print("\n開始抓取選擇權鏈數據...")
@@ -296,7 +295,7 @@ class StockManager:
                     option_df = self.processor.flatten_option_chain(option_data, stock)
 
                     if option_df is not None and not option_df.empty:
-                        # 寫入Excel
+                        # 寫入 OptionChain 工作表
                         modified_base64, message = self.processor.write_option_chain_to_excel(
                             stock=stock,
                             option_df=option_df,
@@ -306,6 +305,23 @@ class StockManager:
                         if modified_base64:
                             self.option_excel_files[stock] = modified_base64
                             print(message)
+
+                            # ✨ 新增：計算選擇權摘要統計
+                            summary = self.processor.calculate_option_summary(option_df)
+
+                            # ✨ 新增：寫入 Option Summary 工作表
+                            if summary:
+                                modified_base64, msg = self.processor.write_option_summary_to_excel(
+                                    summary, modified_base64
+                                )
+
+                                if modified_base64:
+                                    self.option_excel_files[stock] = modified_base64
+                                    print(msg)
+                                else:
+                                    print(f"❌ {msg}")
+                            else:
+                                print(f"⚠️ {stock} 選擇權摘要計算失敗")
                         else:
                             print(f"❌ {message}")
                     else:
