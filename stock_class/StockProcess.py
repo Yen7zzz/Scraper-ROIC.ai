@@ -1233,47 +1233,42 @@ class StockProcess:
     def _calculate_volume_score(self, df):
         """
         計算 Volume Score（成交量分數，對數標準化）
-        公式：=IF(volume=0, 0, LN(1+volume) / LN(1+PERCENTILE_95))
-
-        原始 Excel 公式：
-        =IF(AF2=0,0, LN(1+AF2) / LN(1+PERCENTILE.INC(FILTER($AF:$AF,ISNUMBER($AF:$AF)),0.95)))
-
-        參數:
-            df: DataFrame，必須包含 'totalVolume' 欄位
-
-        返回:
-            DataFrame，新增 'Volume Score' 欄位
+        ✅ 修正：Percentile 計算應包含 0 值
         """
         try:
             import numpy as np
 
             # 確認欄位存在
             if 'totalVolume' not in df.columns:
-                print("⚠️ 警告：缺少 totalVolume 欄位，無法計算 Volume Score")
+                print("⚠️ 警告：缺少 totalVolume 欄位")
                 df['Volume Score'] = None
                 return df
 
             # 轉換為數值型態
             df['totalVolume'] = pd.to_numeric(df['totalVolume'], errors='coerce')
 
-            # 過濾有效數據（>0的數值）
+            # ✅ 修正：只移除 NaN，保留 0
             valid_volumes = df['totalVolume'].dropna()
-            valid_volumes = valid_volumes[valid_volumes > 0]
+
+            # ✅ 修正：篩選數字（包含0），對齊 Excel 的 ISNUMBER
+            valid_volumes = valid_volumes[valid_volumes >= 0]  # 改用 >= 0
 
             if len(valid_volumes) == 0:
-                print("⚠️ 警告：沒有有效的成交量數據，無法計算 Volume Score")
+                print("⚠️ 警告：沒有有效的成交量數據")
                 df['Volume Score'] = 0
                 return df
 
-            # 計算第95百分位數
+            # ✅ 計算第95百分位數（包含0的數據）
             percentile_95 = valid_volumes.quantile(0.95)
 
             print(f"✓ Volume Score 基準（95th percentile）: {percentile_95:,.0f}")
+            print(f"  有效數據筆數: {len(valid_volumes)}")
+            print(f"  其中為0的筆數: {(valid_volumes == 0).sum()}")
 
             # 計算分數
             def calculate_volume_score(volume):
-                # 處理空值或零
-                if pd.isna(volume) or volume <= 0:
+                # ✅ 對齊 Excel: IF(AF2=0, 0, ...)
+                if pd.isna(volume) or volume == 0:
                     return 0
 
                 # 避免 log(1) = 0 導致除以零
@@ -1294,15 +1289,7 @@ class StockProcess:
             if len(valid_scores) > 0:
                 print(f"✓ Volume Score 計算完成：{len(valid_scores)} 筆有效數據")
                 print(f"  平均分數: {valid_scores.mean():.4f}")
-                print(f"  最小分數: {valid_scores.min():.4f}")
                 print(f"  最大分數: {valid_scores.max():.4f}")
-
-                # 分數分布
-                high = (valid_scores >= 0.8).sum()
-                medium = ((valid_scores >= 0.5) & (valid_scores < 0.8)).sum()
-                low = (valid_scores < 0.5).sum()
-
-                print(f"  分數分布：高(≥0.8): {high}, 中(0.5-0.8): {medium}, 低(<0.5): {low}")
 
             return df
 
@@ -1316,76 +1303,51 @@ class StockProcess:
     def _calculate_oi_score(self, df):
         """
         計算 OI Score（未平倉量分數，對數標準化）
-        公式：=IF(openInterest=0, 0, LN(1+openInterest) / LN(1+PERCENTILE_95))
-
-        原始 Excel 公式：
-        =IF(AO2=0,0, LN(1+AO2) / LN(1+PERCENTILE.INC(FILTER($AO:$AO,ISNUMBER($AO:$AO)),0.95)))
-
-        參數:
-            df: DataFrame，必須包含 'openInterest' 欄位
-
-        返回:
-            DataFrame，新增 'OI Score' 欄位
+        ✅ 修正：Percentile 計算應包含 0 值
         """
         try:
             import numpy as np
 
-            # 確認欄位存在
             if 'openInterest' not in df.columns:
-                print("⚠️ 警告：缺少 openInterest 欄位，無法計算 OI Score")
+                print("⚠️ 警告：缺少 openInterest 欄位")
                 df['OI Score'] = None
                 return df
 
-            # 轉換為數值型態
             df['openInterest'] = pd.to_numeric(df['openInterest'], errors='coerce')
 
-            # 過濾有效數據（>0的數值）
+            # ✅ 修正：保留 0 值
             valid_oi = df['openInterest'].dropna()
-            valid_oi = valid_oi[valid_oi > 0]
+            valid_oi = valid_oi[valid_oi >= 0]  # 改用 >= 0
 
             if len(valid_oi) == 0:
-                print("⚠️ 警告：沒有有效的未平倉量數據，無法計算 OI Score")
+                print("⚠️ 警告：沒有有效的未平倉量數據")
                 df['OI Score'] = 0
                 return df
 
-            # 計算第95百分位數
             percentile_95 = valid_oi.quantile(0.95)
 
             print(f"✓ OI Score 基準（95th percentile）: {percentile_95:,.0f}")
+            print(f"  有效數據筆數: {len(valid_oi)}")
+            print(f"  其中為0的筆數: {(valid_oi == 0).sum()}")
 
-            # 計算分數
             def calculate_oi_score(oi):
-                # 處理空值或零
-                if pd.isna(oi) or oi <= 0:
+                # ✅ 對齊 Excel
+                if pd.isna(oi) or oi == 0:
                     return 0
 
-                # 避免 log(1) = 0 導致除以零
                 denominator = np.log(1 + percentile_95)
                 if denominator == 0:
                     return 0
 
-                # 公式：LN(1 + openInterest) / LN(1 + percentile_95)
                 score = np.log(1 + oi) / denominator
-
-                # 四捨五入到 4 位小數
                 return round(score, 4)
 
             df['OI Score'] = df['openInterest'].apply(calculate_oi_score)
 
-            # 統計資訊
             valid_scores = df['OI Score'][df['OI Score'] > 0]
             if len(valid_scores) > 0:
                 print(f"✓ OI Score 計算完成：{len(valid_scores)} 筆有效數據")
                 print(f"  平均分數: {valid_scores.mean():.4f}")
-                print(f"  最小分數: {valid_scores.min():.4f}")
-                print(f"  最大分數: {valid_scores.max():.4f}")
-
-                # 分數分布
-                high = (valid_scores >= 0.8).sum()
-                medium = ((valid_scores >= 0.5) & (valid_scores < 0.8)).sum()
-                low = (valid_scores < 0.5).sum()
-
-                print(f"  分數分布：高(≥0.8): {high}, 中(0.5-0.8): {medium}, 低(<0.5): {low}")
 
             return df
 
@@ -1536,7 +1498,7 @@ class StockProcess:
                 ws = wb[sheet_name]
                 # 清除舊數據
                 # wb.remove(ws)
-                for row in ws.iter_rows(min_row=1, min_col=1, max_row=2000, max_col=75):
+                for row in ws.iter_rows(min_row=1, min_col=1, max_row=2000, max_col=72):
                     for cell in row:
                         cell.value = None
 
