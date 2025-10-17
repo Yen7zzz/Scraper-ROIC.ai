@@ -108,11 +108,31 @@ class StockScraper:
         )
 
     async def cleanup(self):
-        """清理資源。"""
-        if self.browser:
-            await self.browser.close()
-        if self.playwright:
-            await self.playwright.stop()
+        """清理資源 - 改進版，確保完全關閉所有連線"""
+        try:
+            # 1. 關閉瀏覽器（包含錯誤處理）
+            if self.browser:
+                try:
+                    await self.browser.close()
+                except Exception:
+                    pass
+                finally:
+                    self.browser = None
+
+            # 2. 停止 Playwright（包含錯誤處理）
+            if self.playwright:
+                try:
+                    await self.playwright.stop()
+                except Exception:
+                    pass
+                finally:
+                    self.playwright = None
+
+            # 3. 等待所有後台任務完成
+            await asyncio.sleep(0.3)
+
+        except Exception:
+            pass
 
     async def fetch_financials_data(self, stock, semaphore):
         """抓取單一股票的數據（financials）。"""
@@ -1085,9 +1105,10 @@ class StockScraper:
         try:
             tasks = [self.fetch_barchart_data(stock, semaphore) for stock in self.stocks]
             result = await asyncio.gather(*tasks)
+            return result
         finally:
             await self.cleanup()
-        return result
+
 
     async def fetch_option_chain_data(self, stock, semaphore):
         """抓取單一股票的選擇權鏈數據"""
@@ -1168,15 +1189,17 @@ class StockScraper:
         return response.json()
 
     async def run_option_chains(self):
-        """批次執行選擇權鏈抓取"""
-        await self.setup_browser()  # 如果需要的話
+        """批次執行選擇權鏈抓取 - 使用 Schwab API"""
         semaphore = asyncio.Semaphore(self.max_concurrent)
+
         try:
             tasks = [
                 self.fetch_option_chain_data(stock, semaphore)
                 for stock in self.stocks
             ]
             result = await asyncio.gather(*tasks)
-        finally:
-            pass  # 選擇權API不需要清理瀏覽器
-        return result
+            return result
+
+        except Exception as e:
+            print(f"❌ 選擇權鏈抓取失敗: {e}")
+            return []
