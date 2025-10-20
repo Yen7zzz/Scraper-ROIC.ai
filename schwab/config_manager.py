@@ -12,6 +12,7 @@ import schwabdev
 import threading
 import queue
 import builtins
+import json
 
 
 class ConfigManager:
@@ -70,6 +71,86 @@ class ConfigManager:
     def has_valid_token(self):
         """檢查是否有有效的 token"""
         return os.path.exists(self.tokens_path)
+
+    def is_token_valid(self, buffer_days=1):
+        """檢查 Refresh Token 是否仍然有效"""
+        from datetime import datetime, timezone
+
+        try:
+            if not os.path.exists(self.tokens_path):
+                return False, 0, None
+
+            with open(self.tokens_path, 'r') as f:
+                tokens = json.load(f)
+
+            # 取得 refresh_token 發行時間
+            refresh_issued = tokens.get('refresh_token_issued')
+            if not refresh_issued:
+                return False, 0, None
+
+            # 解析 ISO 格式時間
+            issued_time = datetime.fromisoformat(refresh_issued.replace('Z', '+00:00'))
+
+            # Schwab Refresh Token 有效期是 7 天
+            from datetime import timedelta
+            expiry_time = issued_time + timedelta(days=7)
+
+            # 計算剩餘時間
+            current_time = datetime.now(timezone.utc)
+            remaining_seconds = (expiry_time - current_time).total_seconds()
+            remaining_hours = remaining_seconds / 3600
+            remaining_days = remaining_seconds / 86400
+
+            # 判斷是否有效（剩餘時間大於緩衝天數）
+            is_valid = remaining_days > buffer_days
+
+            return is_valid, remaining_hours, expiry_time
+
+        except Exception as e:
+            print(f"❌ 檢查 Token 時發生錯誤: {e}")
+            import traceback
+            traceback.print_exc()
+            return False, 0, None
+
+    def delete_token(self):
+        """安全刪除 Token 檔案"""
+        try:
+            if os.path.exists(self.tokens_path):
+                os.remove(self.tokens_path)
+                print(f"🗑️ 已刪除 Token 檔案: {self.tokens_path}")
+                return True
+            else:
+                print(f"⚠️ Token 檔案不存在: {self.tokens_path}")
+                return False
+        except Exception as e:
+            print(f"❌ 刪除 Token 時發生錯誤: {e}")
+            return False
+
+    def get_token_expiry_info(self):
+        """
+        獲取 Token 過期資訊的詳細字串
+
+        返回:
+            str: 格式化的過期資訊
+        """
+        is_valid, remaining_hours, expiry_time = self.is_token_valid(buffer_days=0)
+
+        if expiry_time is None:
+            return "Token 不存在或無法讀取"
+
+        from datetime import datetime
+
+        if remaining_hours < 0:
+            # 已過期
+            hours_ago = abs(remaining_hours)
+            return f"Token 已過期（{hours_ago:.1f} 小時前過期）"
+        elif remaining_hours < 24:
+            # 不到 1 天
+            return f"Token 將在 {remaining_hours:.1f} 小時後過期\n過期時間：{expiry_time.strftime('%Y-%m-%d %H:%M:%S')}"
+        else:
+            # 超過 1 天
+            days = remaining_hours / 24
+            return f"Token 將在 {days:.1f} 天後過期\n過期時間：{expiry_time.strftime('%Y-%m-%d %H:%M:%S')}"
 
 
 class OAuthSetupWindow:
@@ -582,29 +663,111 @@ def check_and_setup_config():
     檢查配置並在需要時啟動設定視窗
     返回: (config_data, should_continue)
     """
+    import tkinter as tk
+    from tkinter import messagebox
+
     config_manager = ConfigManager()
 
-    # 如果配置和 token 都存在，直接使用
-    if config_manager.config_exists() and config_manager.has_valid_token():
-        config = config_manager.load_config()
-        if config:
-            print("✅ 已載入現有配置和 Token")
-            return config, True
-
-    # 需要重新設定=
+    # 檢查配置檔案是否存在
     if not config_manager.config_exists():
         print("⚙️ 首次運行，啟動配置設定...")
-    else:
-        print("⚠️ Token 無效或不存在，需要重新認證...")
+        setup_window = OAuthSetupWindow()
+        success = setup_window.run()
 
-    setup_window = OAuthSetupWindow()
-    success = setup_window.run()
+        if success:
+            config = config_manager.load_config()
+            return config, True
+        else:
+            print("❌ 用戶取消設定，程式退出")
+            return None, False
 
-    if success:
-        config = config_manager.load_config()
+    # 配置存在，檢查 Token
+    if not config_manager.has_valid_token():
+        print("⚠️ Token 不存在，需要重新認證...")
+        setup_window = OAuthSetupWindow()
+        success = setup_window.run()
+
+        if success:
+            config = config_manager.load_config()
+            return config, True
+        else:
+            print("❌ 用戶取消設定，程式退出")
+            return None, False
+
+    # 配置和 Token 都存在，檢查 Token 是否有效
+    is_valid, remaining_hours, expiry_time = config_manager.is_token_valid(buffer_days=1)
+
+    if not is_valid:
+        # Token 即將過期或已過期
+        expiry_info = config_manager.get_token_expiry_info()
+
+        if remaining_hours < 0:
+            # 已過期 - 自動刪除並重新認證（不詢問）
+            print(f"❌ Token 已過期")
+            print(expiry_info)
+            config_manager.delete_token()
+            print("⚠️ 需要重新認證...")
+
+            setup_window = OAuthSetupWindow()
+            success = setup_window.run()
+
+            if success:
+                config = config_manager.load_config()
+                return config, True
+            else:
+                print("❌ 用戶取消設定，程式退出")
+                return None, False
+
+        else:
+            # 即將過期 - 詢問用戶是否重新認證
+            print(f"⚠️ Token 即將過期")
+            print(expiry_info)
+
+            # 創建臨時視窗來顯示對話框
+            temp_root = tk.Tk()
+            temp_root.withdraw()  # 隱藏主視窗
+
+            # 顯示詢問對話框
+            response = messagebox.askyesno(
+                "⚠️ Token 即將過期",
+                f"{expiry_info}\n\n"
+                "建議現在重新認證以避免後續錯誤。\n\n"
+                "是否立即重新認證？",
+                icon='warning'
+            )
+
+            temp_root.destroy()
+
+            if response:
+                # 用戶選擇重新認證
+                print("🔄 用戶選擇重新認證...")
+                config_manager.delete_token()
+
+                setup_window = OAuthSetupWindow()
+                success = setup_window.run()
+
+                if success:
+                    config = config_manager.load_config()
+                    return config, True
+                else:
+                    print("❌ 用戶取消設定，程式退出")
+                    return None, False
+            else:
+                # 用戶選擇稍後再說
+                print("⚠️ 用戶選擇繼續使用（Token 可能在使用時失效）")
+                config = config_manager.load_config()
+                return config, True
+
+    # Token 有效
+    config = config_manager.load_config()
+    if config:
+        print("✅ 已載入現有配置和 Token")
+        # 顯示剩餘時間（可選）
+        days = remaining_hours / 24
+        print(f"📅 Token 剩餘有效期：{days:.1f} 天")
         return config, True
     else:
-        print("❌ 用戶取消設定，程式退出")
+        print("❌ 載入配置失敗")
         return None, False
 
 

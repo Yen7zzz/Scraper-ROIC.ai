@@ -51,6 +51,11 @@ import json
 import re
 import yfinance as yf
 
+# 自定義異常類別
+class TokenExpiredException(Exception):
+    """Token 過期異常"""
+    pass
+
 class StockScraper:
     def __init__(self, stocks, config=None, headless=True, max_concurrent=5):
         """
@@ -108,11 +113,31 @@ class StockScraper:
         )
 
     async def cleanup(self):
-        """清理資源。"""
-        if self.browser:
-            await self.browser.close()
-        if self.playwright:
-            await self.playwright.stop()
+        """清理資源 - 改進版，確保完全關閉所有連線"""
+        try:
+            # 1. 關閉瀏覽器（包含錯誤處理）
+            if self.browser:
+                try:
+                    await self.browser.close()
+                except Exception:
+                    pass
+                finally:
+                    self.browser = None
+
+            # 2. 停止 Playwright（包含錯誤處理）
+            if self.playwright:
+                try:
+                    await self.playwright.stop()
+                except Exception:
+                    pass
+                finally:
+                    self.playwright = None
+
+            # 3. 等待所有後台任務完成
+            await asyncio.sleep(0.3)
+
+        except Exception:
+            pass
 
     async def fetch_financials_data(self, stock, semaphore):
         """抓取單一股票的數據（financials）。"""
@@ -1085,9 +1110,10 @@ class StockScraper:
         try:
             tasks = [self.fetch_barchart_data(stock, semaphore) for stock in self.stocks]
             result = await asyncio.gather(*tasks)
+            return result
         finally:
             await self.cleanup()
-        return result
+
 
     async def fetch_option_chain_data(self, stock, semaphore):
         """抓取單一股票的選擇權鏈數據"""
@@ -1106,10 +1132,11 @@ class StockScraper:
                 return {stock: {"error": str(e)}}
 
     def _get_option_chain_sync(self, stock):
-        """同步獲取選擇權鏈數據 - 使用傳入的配置"""
+        """同步獲取選擇權鏈數據 - 使用傳入的配置，包含 Token 錯誤處理"""
         import schwabdev
         import os
         import sys
+        import json
 
         # 檢查配置是否可用
         if not self.schwab_available or not self.config:
@@ -1131,17 +1158,14 @@ class StockScraper:
                 f"app_secret: {'已設定' if app_secret else '❌ 未設定'}"
             )
 
-        # 🔥 關鍵修改：計算 tokens.json 的完整路徑到 schwab/ 資料夾
+        # 計算 tokens.json 的完整路徑
         if getattr(sys, 'frozen', False):
-            # 打包後的執行檔
             base_path = os.path.dirname(sys.executable)
             tokens_folder = os.path.join(base_path, 'schwab')
         else:
-            # 開發環境
-            # StockScraper.py 位於: pythonProject1/stock_class/StockScraper.py
             current_file = os.path.abspath(__file__)
-            project_root = os.path.dirname(os.path.dirname(current_file))  # pythonProject1/
-            tokens_folder = os.path.join(project_root, 'schwab')  # pythonProject1/schwab/
+            project_root = os.path.dirname(os.path.dirname(current_file))
+            tokens_folder = os.path.join(project_root, 'schwab')
 
         tokens_file_path = os.path.join(tokens_folder, 'tokens.json')
 
@@ -1155,28 +1179,80 @@ class StockScraper:
                 "請先完成 OAuth 認證流程。"
             )
 
-        # 創建客戶端
-        client = schwabdev.Client(
-            app_key,
-            app_secret,
-            callback_url,
-            tokens_file=tokens_file_path  # 👈 使用完整路徑
-        )
+        try:
+            # 創建客戶端
+            client = schwabdev.Client(
+                app_key,
+                app_secret,
+                callback_url,
+                tokens_file=tokens_file_path
+            )
 
-        # 獲取選擇權數據
-        response = client.option_chains(stock)
-        return response.json()
+            # 獲取選擇權數據
+            response = client.option_chains(stock)
+
+            # 嘗試解析 JSON
+            try:
+                data = response.json()
+            except json.JSONDecodeError as e:
+                # 如果無法解析 JSON，可能是錯誤訊息
+                response_text = response.text if hasattr(response, 'text') else str(response)
+                raise ValueError(f"無法解析 API 回應: {response_text[:200]}")
+
+            # 檢查是否有 Token 錯誤
+            if isinstance(data, dict):
+                if 'error' in data:
+                    error_type = data.get('error', '')
+                    error_desc = data.get('error_description', '')
+
+                    # 檢查是否為 Token 認證錯誤
+                    if 'refresh_token_authentication_error' in error_desc or \
+                            'refresh_token_authentication_error' in error_type or \
+                            'unsupported_token_type' in error_type:
+
+                        print(f"❌ Token 認證失敗: {error_desc}")
+
+                        # 拋出自定義異常
+                        raise TokenExpiredException(
+                            f"Refresh Token 已失效或過期\n"
+                            f"錯誤類型: {error_type}\n"
+                            f"錯誤描述: {error_desc}\n\n"
+                            f"請重新啟動程式完成認證流程。"
+                        )
+                    else:
+                        # 其他 API 錯誤
+                        raise ValueError(f"API 錯誤: {error_type} - {error_desc}")
+
+            return data
+
+        except TokenExpiredException:
+            # 重新拋出 Token 異常
+            raise
+
+        except Exception as e:
+            # 檢查錯誤訊息中是否包含 Token 相關關鍵字
+            error_str = str(e).lower()
+            if 'refresh_token' in error_str or 'token' in error_str and 'authentication' in error_str:
+                raise TokenExpiredException(
+                    f"Token 認證失敗: {str(e)}\n\n"
+                    f"請重新啟動程式完成認證流程。"
+                )
+            else:
+                # 其他錯誤直接拋出
+                raise e
 
     async def run_option_chains(self):
-        """批次執行選擇權鏈抓取"""
-        await self.setup_browser()  # 如果需要的話
+        """批次執行選擇權鏈抓取 - 使用 Schwab API"""
         semaphore = asyncio.Semaphore(self.max_concurrent)
+
         try:
             tasks = [
                 self.fetch_option_chain_data(stock, semaphore)
                 for stock in self.stocks
             ]
             result = await asyncio.gather(*tasks)
-        finally:
-            pass  # 選擇權API不需要清理瀏覽器
-        return result
+            return result
+
+        except Exception as e:
+            print(f"❌ 選擇權鏈抓取失敗: {e}")
+            return []

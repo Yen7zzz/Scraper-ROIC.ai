@@ -870,13 +870,13 @@ class StockProcess:
             excel_binary = base64.b64decode(excel_base64)
             excel_buffer = io.BytesIO(excel_binary)
             wb = load_workbook(excel_buffer)
-            ws = wb.worksheets[0]  # 使用第一個工作表
+            ws = wb.worksheets[1]  # 使用第一個工作表
 
             # 清除舊資料
-            ws['D27'] = None
-            ws['D28'] = None
-            ws['D29'] = None
-            ws['D30'] = None
+            ws['C3'] = None
+            ws['C4'] = None
+            ws['C5'] = None
+            ws['C6'] = None
 
             # 立即保存清除後的版本
             output_buffer = io.BytesIO()
@@ -910,13 +910,13 @@ class StockProcess:
             excel_binary = base64.b64decode(cleaned_base64)
             excel_buffer = io.BytesIO(excel_binary)
             wb = load_workbook(excel_buffer)
-            ws = wb.worksheets[0]
+            ws = wb.worksheets[1]
 
             # 寫入數值到指定儲存格
-            ws['D27'] = iv_value  # Implied Volatility
-            ws['D28'] = hv_value  # Historic Volatility
-            ws['D29'] = iv_pctl_value  # IV Percentile
-            ws['D30'] = iv_rank_value  # IV Rank
+            ws['C3'] = iv_value  # Total IV
+            ws['C4'] = hv_value  # Total HV
+            ws['C5'] = iv_pctl_value  # Total IV Percentile
+            ws['C6'] = iv_rank_value  # Total IV Rank
 
             # 保存修改後的Excel
             output_buffer = io.BytesIO()
@@ -1452,139 +1452,139 @@ class StockProcess:
             df['Liquidity Score'] = None
             return df
 
-    def calculate_option_summary(self, option_df):
-        """
-        計算選擇權摘要統計
+    # def calculate_option_summary(self, option_df):
+    #     """
+    #     計算選擇權摘要統計
+    #
+    #     參數:
+    #         option_df: flatten_option_chain 產生的 DataFrame
+    #
+    #     返回:
+    #         dict {
+    #             'call_strike': float,  # D3 - CALL 壓力位/支撐位
+    #             'put_strike': float,   # E3 - PUT 壓力位/支撐位
+    #             'call_oi': float,      # D4 - CALL 壓力/支撐強度
+    #             'put_oi': float        # E4 - PUT 壓力/支撐強度
+    #         }
+    #     """
+    #     try:
+    #         # 確認必要欄位存在
+    #         required_columns = ['strikePrice', 'openInterest', 'putCall']
+    #         missing_columns = [col for col in required_columns if col not in option_df.columns]
+    #
+    #         if missing_columns:
+    #             print(f"❌ 錯誤：缺少必要欄位 {missing_columns}")
+    #             return None
+    #
+    #         # 轉換為數值型態
+    #         option_df['strikePrice'] = pd.to_numeric(option_df['strikePrice'], errors='coerce')
+    #         option_df['openInterest'] = pd.to_numeric(option_df['openInterest'], errors='coerce')
+    #
+    #         # === 計算 CALL 選擇權統計 ===
+    #         call_df = option_df[option_df['putCall'] == 'CALL'].copy()
+    #
+    #         if len(call_df) == 0:
+    #             print("⚠️ 警告：沒有 CALL 選擇權數據")
+    #             call_strike = None
+    #             call_oi = None
+    #         else:
+    #             # 按履約價分組，計算總 OI
+    #             call_grouped = call_df.groupby('strikePrice')['openInterest'].sum()
+    #
+    #             # 找出最大 OI 的履約價（自動取第一個）
+    #             call_strike = call_grouped.idxmax()
+    #             call_oi = call_grouped.max()
+    #
+    #             print(f"✓ CALL 壓力位/支撐位: ${call_strike:,.2f}")
+    #             print(f"  總未平倉量: {call_oi:,.0f}")
+    #
+    #         # === 計算 PUT 選擇權統計 ===
+    #         put_df = option_df[option_df['putCall'] == 'PUT'].copy()
+    #
+    #         if len(put_df) == 0:
+    #             print("⚠️ 警告：沒有 PUT 選擇權數據")
+    #             put_strike = None
+    #             put_oi = None
+    #         else:
+    #             # 按履約價分組，計算總 OI
+    #             put_grouped = put_df.groupby('strikePrice')['openInterest'].sum()
+    #
+    #             # 找出最大 OI 的履約價（自動取第一個）
+    #             put_strike = put_grouped.idxmax()
+    #             put_oi = put_grouped.max()
+    #
+    #             print(f"✓ PUT 壓力位/支撐位: ${put_strike:,.2f}")
+    #             print(f"  總未平倉量: {put_oi:,.0f}")
+    #
+    #         return {
+    #             'call_strike': call_strike,
+    #             'put_strike': put_strike,
+    #             'call_oi': call_oi,
+    #             'put_oi': put_oi
+    #         }
+    #
+    #     except Exception as e:
+    #         print(f"❌ 計算選擇權摘要時發生錯誤: {e}")
+    #         import traceback
+    #         traceback.print_exc()
+    #         return None
 
-        參數:
-            option_df: flatten_option_chain 產生的 DataFrame
-
-        返回:
-            dict {
-                'call_strike': float,  # D3 - CALL 壓力位/支撐位
-                'put_strike': float,   # E3 - PUT 壓力位/支撐位
-                'call_oi': float,      # D4 - CALL 壓力/支撐強度
-                'put_oi': float        # E4 - PUT 壓力/支撐強度
-            }
-        """
-        try:
-            # 確認必要欄位存在
-            required_columns = ['strikePrice', 'openInterest', 'putCall']
-            missing_columns = [col for col in required_columns if col not in option_df.columns]
-
-            if missing_columns:
-                print(f"❌ 錯誤：缺少必要欄位 {missing_columns}")
-                return None
-
-            # 轉換為數值型態
-            option_df['strikePrice'] = pd.to_numeric(option_df['strikePrice'], errors='coerce')
-            option_df['openInterest'] = pd.to_numeric(option_df['openInterest'], errors='coerce')
-
-            # === 計算 CALL 選擇權統計 ===
-            call_df = option_df[option_df['putCall'] == 'CALL'].copy()
-
-            if len(call_df) == 0:
-                print("⚠️ 警告：沒有 CALL 選擇權數據")
-                call_strike = None
-                call_oi = None
-            else:
-                # 按履約價分組，計算總 OI
-                call_grouped = call_df.groupby('strikePrice')['openInterest'].sum()
-
-                # 找出最大 OI 的履約價（自動取第一個）
-                call_strike = call_grouped.idxmax()
-                call_oi = call_grouped.max()
-
-                print(f"✓ CALL 壓力位/支撐位: ${call_strike:,.2f}")
-                print(f"  總未平倉量: {call_oi:,.0f}")
-
-            # === 計算 PUT 選擇權統計 ===
-            put_df = option_df[option_df['putCall'] == 'PUT'].copy()
-
-            if len(put_df) == 0:
-                print("⚠️ 警告：沒有 PUT 選擇權數據")
-                put_strike = None
-                put_oi = None
-            else:
-                # 按履約價分組，計算總 OI
-                put_grouped = put_df.groupby('strikePrice')['openInterest'].sum()
-
-                # 找出最大 OI 的履約價（自動取第一個）
-                put_strike = put_grouped.idxmax()
-                put_oi = put_grouped.max()
-
-                print(f"✓ PUT 壓力位/支撐位: ${put_strike:,.2f}")
-                print(f"  總未平倉量: {put_oi:,.0f}")
-
-            return {
-                'call_strike': call_strike,
-                'put_strike': put_strike,
-                'call_oi': call_oi,
-                'put_oi': put_oi
-            }
-
-        except Exception as e:
-            print(f"❌ 計算選擇權摘要時發生錯誤: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
-
-    def write_option_summary_to_excel(self, summary_dict, excel_base64):
-        """
-        將選擇權摘要寫入 Option Summary 工作表
-
-        寫入位置:
-            D3: summary_dict['call_strike']  - CALL 壓力位/支撐位
-            E3: summary_dict['put_strike']   - PUT 壓力位/支撐位
-            D4: summary_dict['call_oi']      - CALL 壓力/支撐強度
-            E4: summary_dict['put_oi']       - PUT 壓力/支撐強度
-
-        參數:
-            summary_dict: calculate_option_summary 返回的字典
-            excel_base64: Excel 檔案的 base64 編碼
-
-        返回:
-            (modified_base64, message): 更新後的 base64 和狀態訊息
-        """
-        try:
-            if summary_dict is None:
-                return excel_base64, "❌ 摘要數據為空，無法寫入"
-
-            # 解碼 Excel
-            excel_binary = base64.b64decode(excel_base64)
-            excel_buffer = io.BytesIO(excel_binary)
-            wb = load_workbook(excel_buffer)
-
-            # 取得 Option Summary 工作表
-            sheet_name = 'Option Summary'
-            if sheet_name not in wb.sheetnames:
-                return excel_base64, f"❌ 找不到工作表：{sheet_name}"
-
-            ws = wb[sheet_name]
-
-            # 寫入數據到指定儲存格
-            ws['H3'] = summary_dict['call_strike']  # CALL 履約價
-            ws['I3'] = summary_dict['put_strike']  # PUT 履約價
-            ws['H4'] = summary_dict['call_oi']  # CALL OI
-            ws['I4'] = summary_dict['put_oi']  # PUT OI
-
-            # 保存到 base64
-            output_buffer = io.BytesIO()
-            wb.save(output_buffer)
-            output_buffer.seek(0)
-            modified_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
-
-            print(f"✅ 成功寫入選擇權摘要到 {sheet_name} 工作表")
-            print(f"   CALL: Strike=${summary_dict['call_strike']}, OI={summary_dict['call_oi']:,.0f}")
-            print(f"   PUT:  Strike=${summary_dict['put_strike']}, OI={summary_dict['put_oi']:,.0f}")
-
-            return modified_base64, "✅ 成功寫入選擇權摘要"
-
-        except Exception as e:
-            print(f"❌ 寫入選擇權摘要時發生錯誤: {e}")
-            import traceback
-            traceback.print_exc()
-            return excel_base64, f"❌ 寫入選擇權摘要時發生錯誤: {e}"
+    # def write_option_summary_to_excel(self, summary_dict, excel_base64):
+    #     """
+    #     將選擇權摘要寫入 Option Summary 工作表
+    #
+    #     寫入位置:
+    #         D3: summary_dict['call_strike']  - CALL 壓力位/支撐位
+    #         E3: summary_dict['put_strike']   - PUT 壓力位/支撐位
+    #         D4: summary_dict['call_oi']      - CALL 壓力/支撐強度
+    #         E4: summary_dict['put_oi']       - PUT 壓力/支撐強度
+    #
+    #     參數:
+    #         summary_dict: calculate_option_summary 返回的字典
+    #         excel_base64: Excel 檔案的 base64 編碼
+    #
+    #     返回:
+    #         (modified_base64, message): 更新後的 base64 和狀態訊息
+    #     """
+    #     try:
+    #         if summary_dict is None:
+    #             return excel_base64, "❌ 摘要數據為空，無法寫入"
+    #
+    #         # 解碼 Excel
+    #         excel_binary = base64.b64decode(excel_base64)
+    #         excel_buffer = io.BytesIO(excel_binary)
+    #         wb = load_workbook(excel_buffer)
+    #
+    #         # 取得 Option Summary 工作表
+    #         sheet_name = 'Option Summary'
+    #         if sheet_name not in wb.sheetnames:
+    #             return excel_base64, f"❌ 找不到工作表：{sheet_name}"
+    #
+    #         ws = wb[sheet_name]
+    #
+    #         # 寫入數據到指定儲存格
+    #         ws['H3'] = summary_dict['call_strike']  # CALL 履約價
+    #         ws['I3'] = summary_dict['put_strike']  # PUT 履約價
+    #         ws['H4'] = summary_dict['call_oi']  # CALL OI
+    #         ws['I4'] = summary_dict['put_oi']  # PUT OI
+    #
+    #         # 保存到 base64
+    #         output_buffer = io.BytesIO()
+    #         wb.save(output_buffer)
+    #         output_buffer.seek(0)
+    #         modified_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
+    #
+    #         print(f"✅ 成功寫入選擇權摘要到 {sheet_name} 工作表")
+    #         print(f"   CALL: Strike=${summary_dict['call_strike']}, OI={summary_dict['call_oi']:,.0f}")
+    #         print(f"   PUT:  Strike=${summary_dict['put_strike']}, OI={summary_dict['put_oi']:,.0f}")
+    #
+    #         return modified_base64, "✅ 成功寫入選擇權摘要"
+    #
+    #     except Exception as e:
+    #         print(f"❌ 寫入選擇權摘要時發生錯誤: {e}")
+    #         import traceback
+    #         traceback.print_exc()
+    #         return excel_base64, f"❌ 寫入選擇權摘要時發生錯誤: {e}"
 
     def _convert_complex_types_to_string(self, df):
         """
