@@ -1,3 +1,5 @@
+import warnings
+import sys
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog
 import threading
@@ -12,6 +14,19 @@ from stock_class.StockProcess import StockProcess
 from stock_class.StockManager import StockManager
 from stock_class.StockValidator import StockValidator
 
+# 🔥 抑制不必要的警告
+warnings.filterwarnings('ignore', category=ResourceWarning)
+warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
+warnings.filterwarnings('ignore', category=DeprecationWarning)
+
+# 🔥 Windows 特定：使用 Selector 事件循環策略（更穩定）
+if sys.platform == 'win32':
+    # 對於 Python 3.8+
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except AttributeError:
+        # Python 3.7 或更早版本
+        pass
 
 # ====== GUI 部分 ======
 class StockAnalyzerGUI:
@@ -40,6 +55,11 @@ class StockAnalyzerGUI:
         # 新增：模板選擇變數
         self.stock_analysis_var = tk.BooleanVar(value=True)  # 預設勾選
         self.option_analysis_var = tk.BooleanVar(value=True)  # 預設勾選
+
+        # 🔥 新增：追蹤當前運行的資源（用於強制清理）
+        self.current_scraper = None
+        self.current_manager = None
+        self.cleanup_lock = threading.Lock()  # 防止重複清理
 
         self.setup_ui()
 
@@ -697,43 +717,80 @@ class StockAnalyzerGUI:
         self.current_thread.start()
 
     def stop_analysis(self):
-        """立即停止分析並恢復UI狀態"""
+        """立即強制停止分析並清理所有資源 - 改進版"""
         try:
-            # 立即設定停止標誌
+            # 🔥 Step 1: 立即設定停止標誌
             self.is_running = False
+            self.log("🛑 使用者請求立即停止，開始強制清理資源...")
 
-            # 立即恢復UI狀態
+            # 🔥 Step 2: 強制清理 Playwright 資源（最重要）
+            with self.cleanup_lock:
+                cleanup_tasks = []
+
+                # 清理 Scraper
+                if self.current_scraper:
+                    self.log("🧹 正在關閉 Playwright 瀏覽器...")
+                    try:
+                        # 如果事件循環還在運行，使用 run_coroutine_threadsafe
+                        if self.event_loop and self.event_loop.is_running():
+                            future = asyncio.run_coroutine_threadsafe(
+                                self.current_scraper.cleanup(),
+                                self.event_loop
+                            )
+                            # 等待最多 5 秒
+                            future.result(timeout=5)
+                        else:
+                            # 事件循環已停止，創建新的循環來清理
+                            new_loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(new_loop)
+                            new_loop.run_until_complete(self.current_scraper.cleanup())
+                            new_loop.close()
+
+                        self.log("✅ Playwright 瀏覽器已關閉")
+                    except Exception as e:
+                        self.log(f"⚠️ 清理 Scraper 時發生錯誤（已忽略）: {e}")
+                    finally:
+                        self.current_scraper = None
+
+                # 清理 Manager
+                if self.current_manager:
+                    self.log("🧹 正在清理 Manager 資源...")
+                    try:
+                        # Manager 可能有自己的清理邏輯
+                        if hasattr(self.current_manager, 'cleanup'):
+                            self.current_manager.cleanup()
+                    except Exception as e:
+                        self.log(f"⚠️ 清理 Manager 時發生錯誤（已忽略）: {e}")
+                    finally:
+                        self.current_manager = None
+
+            # 🔥 Step 3: 取消異步任務
+            if self.current_task and not self.current_task.done():
+                self.log("🚫 正在取消異步任務...")
+                self.current_task.cancel()
+
+            # 🔥 Step 4: 停止事件循環
+            if self.event_loop and self.event_loop.is_running():
+                self.log("🔄 正在停止事件循環...")
+                try:
+                    self.event_loop.call_soon_threadsafe(self.event_loop.stop)
+                except Exception as e:
+                    self.log(f"⚠️ 停止事件循環時發生錯誤（已忽略）: {e}")
+
+            # 🔥 Step 5: 恢復 UI 狀態
             self.start_btn.config(state=tk.NORMAL)
             self.stop_btn.config(state=tk.DISABLED)
-
-            # 重置進度條歸零
             self.progress['value'] = 0
             self.progress_percent_label.config(text="0%")
-
-            # 更新狀態標籤
             self.update_status("爬蟲已停止")
 
-            # 記錄停止訊息
-            self.log("🛑 使用者請求立即停止爬蟲")
-            self.log("✅ UI狀態已恢復，可以重新開始爬蟲")
-
-            # 嘗試取消當前的異步任務
-            if self.current_task and not self.current_task.done():
-                self.current_task.cancel()
-                self.log("🚫 已取消正在執行的異步任務")
-
-            # 嘗試停止事件循環
-            if self.event_loop and self.event_loop.is_running():
-                self.event_loop.call_soon_threadsafe(self.event_loop.stop)
-                self.log("🔄 已請求停止事件循環")
-
-            # 強制更新UI
+            # 🔥 Step 6: 強制更新 UI
             self.root.update_idletasks()
 
-            self.log("✅ 停止操作完成，系統已就緒")
+            self.log("✅ 所有資源清理完成，系統已就緒")
 
         except Exception as e:
-            # 即使發生錯誤也要確保UI恢復
+            # 即使發生錯誤也要確保 UI 恢復
             self.start_btn.config(state=tk.NORMAL)
             self.stop_btn.config(state=tk.DISABLED)
             self.progress['value'] = 0
@@ -777,7 +834,13 @@ class StockAnalyzerGUI:
                 self.is_running = False
 
     async def async_analysis(self, stocks):
-        """異步執行分析 - 支援雙模板選擇"""
+        """異步執行分析 - 支援雙模板選擇，並確保資源清理"""
+
+        # 🔥 初始化資源引用
+        scraper = None
+        processor = None
+        manager = None
+
         try:
             # 獲取選擇的模板
             do_stock_analysis = self.stock_analysis_var.get()
@@ -808,13 +871,10 @@ class StockAnalyzerGUI:
             # 計算總步驟數
             total_steps = 0
             if do_stock_analysis and do_option_analysis:
-                # 兩者都選：共用驗證(2步) + 股票分析(8步) + 選擇權分析(4步) = 14步
                 total_steps = 14
             elif do_stock_analysis:
-                # 只選股票分析：10步
                 total_steps = 10
             elif do_option_analysis:
-                # 只選選擇權分析：1(驗證) + 4(處理) = 5步
                 total_steps = 5
 
             current_step = 0
@@ -903,20 +963,25 @@ class StockAnalyzerGUI:
 
             # ===== 股票分析階段 =====
             saved_stock_files = []
-            manager = None  # 初始化 manager 變數
 
             if do_stock_analysis:
                 check_if_stopped()
                 self.log("\n【第一階段：股票分析】")
                 self.log("🎯" + "=" * 80)
 
-                # 創建分析物件
+                # 🔥 創建分析物件並保存引用
                 self.update_status("初始化股票分析系統")
                 self.log("🔧 正在初始化股票爬蟲系統...")
+
                 scraper = StockScraper(stocks=stocks_dict, config=self.config, max_concurrent=3)
                 processor = StockProcess(max_concurrent=2)
                 manager = StockManager(scraper=scraper, processor=processor,
                                        stocks=stocks_dict, validator=validator, max_concurrent=3)
+
+                # 🔥 保存到實例變數（供 stop_analysis 使用）
+                self.current_scraper = scraper
+                self.current_manager = manager
+
                 self.log("✅ 股票爬蟲系統初始化完成")
 
                 # 初始化 Excel 檔案
@@ -1017,10 +1082,16 @@ class StockAnalyzerGUI:
                 if not do_stock_analysis:
                     self.update_status("初始化選擇權分析系統")
                     self.log("🔧 正在初始化選擇權爬蟲系統...")
+
                     scraper = StockScraper(stocks=stocks_dict, config=self.config, max_concurrent=3)
                     processor = StockProcess(max_concurrent=2)
                     manager = StockManager(scraper=scraper, processor=processor,
                                            stocks=stocks_dict, validator=validator, max_concurrent=3)
+
+                    # 🔥 保存引用
+                    self.current_scraper = scraper
+                    self.current_manager = manager
+
                     self.log("✅ 選擇權爬蟲系統初始化完成")
 
                 # 初始化選擇權 Excel
@@ -1136,20 +1207,73 @@ class StockAnalyzerGUI:
 
             messagebox.showinfo("🎉 爬蟲完成", completion_msg)
 
+
         except asyncio.CancelledError:
+
             # 任務被取消時的處理
-            self.log("🛑 爬蟲任務已被成功取消")
+
+            self.log("🛑 爬蟲任務已被使用者取消")
+
             self.update_status("爬蟲已停止")
+
             raise
 
+
         except Exception as e:
+
             # 發生錯誤時也要停止進度條
+
             self.reset_progress()
+
             error_msg = f"系統錯誤：{str(e)}"
+
             self.log(f"❌ {error_msg}")
+
             self.update_status("爬蟲失敗")
+
             messagebox.showerror("❌ 錯誤", f"爬蟲過程中發生錯誤：\n{str(e)}")
+
             raise e
+
+
+        finally:
+
+            # 🔥 確保資源被清理（無論是正常結束還是異常）
+
+            self.log("🧹 開始最終清理...")
+
+            try:
+
+                # 清理 Scraper
+
+                if scraper and scraper == self.current_scraper:
+                    self.log("🧹 清理 Scraper 資源...")
+
+                    await scraper.cleanup()
+
+                    self.current_scraper = None
+
+                    self.log("✅ Scraper 清理完成")
+
+                # 清理 Manager（如果有自己的清理邏輯）
+
+                if manager and manager == self.current_manager:
+
+                    self.log("🧹 清理 Manager 資源...")
+
+                    if hasattr(manager, 'cleanup'):
+                        manager.cleanup()
+
+                    self.current_manager = None
+
+                    self.log("✅ Manager 清理完成")
+
+
+            except Exception as e:
+
+                self.log(f"⚠️ 最終清理時發生錯誤（已忽略）: {e}")
+
+            self.log("✅ 最終清理完成")
 
     def run(self):
         """啟動GUI"""

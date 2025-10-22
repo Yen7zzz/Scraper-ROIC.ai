@@ -1,5 +1,32 @@
-.idea/
-__pycache__/
+# Build artifacts
+build/
+dist/
 *.pyc
-venv/
-.env
+__pycache__/
+*.egg-info/
+*.exe
+
+# Sensitive files
+schwab/tokens.json
+*.json
+
+# Excel files
+*.xlsx
+*.xls
+
+# Icons and images
+*.ico
+*.png
+*.jpg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test files
+ts.py

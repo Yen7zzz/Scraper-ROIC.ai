@@ -848,7 +848,7 @@ class StockProcess:
 
             excel_binary = base64.b64decode(Option_Chain_Excel_Template_Base64.strip())
             excel_buffer = io.BytesIO(excel_binary)
-            workbook = load_workbook(excel_buffer)
+            workbook = load_workbook(excel_buffer, keep_vba=True)
 
             # 儲存修改後的檔案到記憶體
             output_buffer = io.BytesIO()
@@ -869,7 +869,7 @@ class StockProcess:
             # 解碼Excel
             excel_binary = base64.b64decode(excel_base64)
             excel_buffer = io.BytesIO(excel_binary)
-            wb = load_workbook(excel_buffer)
+            wb = load_workbook(excel_buffer, keep_vba=True)
             ws = wb.worksheets[1]  # 使用第一個工作表
 
             # 清除舊資料
@@ -909,7 +909,7 @@ class StockProcess:
             # 重新載入Excel以寫入數據
             excel_binary = base64.b64decode(cleaned_base64)
             excel_buffer = io.BytesIO(excel_binary)
-            wb = load_workbook(excel_buffer)
+            wb = load_workbook(excel_buffer, keep_vba=True)
             ws = wb.worksheets[1]
 
             # 寫入數值到指定儲存格
@@ -957,7 +957,7 @@ class StockProcess:
             try:
                 excel_binary = base64.b64decode(excel_base64)
                 excel_buffer = io.BytesIO(excel_binary)
-                wb = load_workbook(excel_buffer)
+                wb = load_workbook(excel_buffer, keep_vba=True)
                 ws = wb.worksheets[0]
 
                 # 清除舊資料
@@ -1048,6 +1048,9 @@ class StockProcess:
             # 計算 Liquidity Score
             df = self._calculate_liquidity_score(df)  # 新增
 
+            # 計算 Gamma Exposure
+            df = self._calculate_Gamma_Exposure(df)  # 新增
+
             # ✨ 新增：重新排序欄位
             desired_columns = [
                 'symbol', 'status', 'underlying', 'strategy', 'interval', 'isDelayed',
@@ -1063,7 +1066,8 @@ class StockProcess:
                 'percentChange', 'markChange', 'markPercentChange', 'intrinsicValue',
                 'extrinsicValue', 'optionRoot', 'exerciseType', 'high52Week', 'low52Week',
                 'nonStandard', 'inTheMoney', 'mini', 'pennyPilot', 'expDateKey', 'strikeKey',
-                'Bid-Ask Spread', 'Bid-Ask Score', 'Volume Score', 'OI Score', 'Liquidity Score'
+                'Bid-Ask Spread', 'Bid-Ask Score', 'Volume Score', 'OI Score', 'Liquidity Score',
+                'Gamma Exposure'
             ]
 
             # 只保留存在於 DataFrame 中的欄位,並按照指定順序排列
@@ -1411,8 +1415,9 @@ class StockProcess:
                         WEIGHT_OI * oi_score
                 )
 
-                # 確保分數在 0-1 之間
-                liquidity = max(0, min(1, liquidity))
+                # 只限制 ≥ 0，允許 > 1
+                # liquidity = max(0, min(1, liquidity))
+                liquidity = max(0, liquidity)
 
                 # 四捨五入到 4 位小數
                 return round(liquidity, 4)
@@ -1452,139 +1457,39 @@ class StockProcess:
             df['Liquidity Score'] = None
             return df
 
-    # def calculate_option_summary(self, option_df):
-    #     """
-    #     計算選擇權摘要統計
-    #
-    #     參數:
-    #         option_df: flatten_option_chain 產生的 DataFrame
-    #
-    #     返回:
-    #         dict {
-    #             'call_strike': float,  # D3 - CALL 壓力位/支撐位
-    #             'put_strike': float,   # E3 - PUT 壓力位/支撐位
-    #             'call_oi': float,      # D4 - CALL 壓力/支撐強度
-    #             'put_oi': float        # E4 - PUT 壓力/支撐強度
-    #         }
-    #     """
-    #     try:
-    #         # 確認必要欄位存在
-    #         required_columns = ['strikePrice', 'openInterest', 'putCall']
-    #         missing_columns = [col for col in required_columns if col not in option_df.columns]
-    #
-    #         if missing_columns:
-    #             print(f"❌ 錯誤：缺少必要欄位 {missing_columns}")
-    #             return None
-    #
-    #         # 轉換為數值型態
-    #         option_df['strikePrice'] = pd.to_numeric(option_df['strikePrice'], errors='coerce')
-    #         option_df['openInterest'] = pd.to_numeric(option_df['openInterest'], errors='coerce')
-    #
-    #         # === 計算 CALL 選擇權統計 ===
-    #         call_df = option_df[option_df['putCall'] == 'CALL'].copy()
-    #
-    #         if len(call_df) == 0:
-    #             print("⚠️ 警告：沒有 CALL 選擇權數據")
-    #             call_strike = None
-    #             call_oi = None
-    #         else:
-    #             # 按履約價分組，計算總 OI
-    #             call_grouped = call_df.groupby('strikePrice')['openInterest'].sum()
-    #
-    #             # 找出最大 OI 的履約價（自動取第一個）
-    #             call_strike = call_grouped.idxmax()
-    #             call_oi = call_grouped.max()
-    #
-    #             print(f"✓ CALL 壓力位/支撐位: ${call_strike:,.2f}")
-    #             print(f"  總未平倉量: {call_oi:,.0f}")
-    #
-    #         # === 計算 PUT 選擇權統計 ===
-    #         put_df = option_df[option_df['putCall'] == 'PUT'].copy()
-    #
-    #         if len(put_df) == 0:
-    #             print("⚠️ 警告：沒有 PUT 選擇權數據")
-    #             put_strike = None
-    #             put_oi = None
-    #         else:
-    #             # 按履約價分組，計算總 OI
-    #             put_grouped = put_df.groupby('strikePrice')['openInterest'].sum()
-    #
-    #             # 找出最大 OI 的履約價（自動取第一個）
-    #             put_strike = put_grouped.idxmax()
-    #             put_oi = put_grouped.max()
-    #
-    #             print(f"✓ PUT 壓力位/支撐位: ${put_strike:,.2f}")
-    #             print(f"  總未平倉量: {put_oi:,.0f}")
-    #
-    #         return {
-    #             'call_strike': call_strike,
-    #             'put_strike': put_strike,
-    #             'call_oi': call_oi,
-    #             'put_oi': put_oi
-    #         }
-    #
-    #     except Exception as e:
-    #         print(f"❌ 計算選擇權摘要時發生錯誤: {e}")
-    #         import traceback
-    #         traceback.print_exc()
-    #         return None
+    def _calculate_Gamma_Exposure(self, df):
+        """
+        計算 Gamma Exposure（Gamma 風險敞口）
+        公式：gamma * openInterest
 
-    # def write_option_summary_to_excel(self, summary_dict, excel_base64):
-    #     """
-    #     將選擇權摘要寫入 Option Summary 工作表
-    #
-    #     寫入位置:
-    #         D3: summary_dict['call_strike']  - CALL 壓力位/支撐位
-    #         E3: summary_dict['put_strike']   - PUT 壓力位/支撐位
-    #         D4: summary_dict['call_oi']      - CALL 壓力/支撐強度
-    #         E4: summary_dict['put_oi']       - PUT 壓力/支撐強度
-    #
-    #     參數:
-    #         summary_dict: calculate_option_summary 返回的字典
-    #         excel_base64: Excel 檔案的 base64 編碼
-    #
-    #     返回:
-    #         (modified_base64, message): 更新後的 base64 和狀態訊息
-    #     """
-    #     try:
-    #         if summary_dict is None:
-    #             return excel_base64, "❌ 摘要數據為空，無法寫入"
-    #
-    #         # 解碼 Excel
-    #         excel_binary = base64.b64decode(excel_base64)
-    #         excel_buffer = io.BytesIO(excel_binary)
-    #         wb = load_workbook(excel_buffer)
-    #
-    #         # 取得 Option Summary 工作表
-    #         sheet_name = 'Option Summary'
-    #         if sheet_name not in wb.sheetnames:
-    #             return excel_base64, f"❌ 找不到工作表：{sheet_name}"
-    #
-    #         ws = wb[sheet_name]
-    #
-    #         # 寫入數據到指定儲存格
-    #         ws['H3'] = summary_dict['call_strike']  # CALL 履約價
-    #         ws['I3'] = summary_dict['put_strike']  # PUT 履約價
-    #         ws['H4'] = summary_dict['call_oi']  # CALL OI
-    #         ws['I4'] = summary_dict['put_oi']  # PUT OI
-    #
-    #         # 保存到 base64
-    #         output_buffer = io.BytesIO()
-    #         wb.save(output_buffer)
-    #         output_buffer.seek(0)
-    #         modified_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
-    #
-    #         print(f"✅ 成功寫入選擇權摘要到 {sheet_name} 工作表")
-    #         print(f"   CALL: Strike=${summary_dict['call_strike']}, OI={summary_dict['call_oi']:,.0f}")
-    #         print(f"   PUT:  Strike=${summary_dict['put_strike']}, OI={summary_dict['put_oi']:,.0f}")
-    #
-    #         return modified_base64, "✅ 成功寫入選擇權摘要"
-    #
-    #     except Exception as e:
-    #         print(f"❌ 寫入選擇權摘要時發生錯誤: {e}")
-    #         import traceback
-    #         traceback.print_exc()
-    #         return excel_base64, f"❌ 寫入選擇權摘要時發生錯誤: {e}"
+        參數:
+            df: DataFrame，必須包含 'gamma' 和 'openInterest' 欄位
+
+        返回:
+            DataFrame，新增 'Gamma Exposure' 欄位
+        """
+        try:
+            # 確認必要欄位存在
+            if 'gamma' not in df.columns or 'openInterest' not in df.columns:
+                print("⚠️ 警告：缺少 gamma 或 openInterest 欄位，無法計算 Gamma Exposure")
+                df['Gamma Exposure'] = None
+                return df
+
+            # 轉換為數值型態（防禦性編程）
+            df['gamma'] = pd.to_numeric(df['gamma'], errors='coerce')
+            df['openInterest'] = pd.to_numeric(df['openInterest'], errors='coerce')
+
+            # 計算 Gamma Exposure
+            df['Gamma Exposure'] = df['gamma'] * df['openInterest']
+
+            return df
+
+        except Exception as e:
+            print(f"❌ 計算 Gamma Exposure 時發生錯誤: {e}")
+            import traceback
+            traceback.print_exc()
+            df['Gamma Exposure'] = None
+            return df
 
     def _convert_complex_types_to_string(self, df):
         """
@@ -1624,7 +1529,7 @@ class StockProcess:
             # 解碼Excel
             excel_binary = base64.b64decode(excel_base64)
             excel_buffer = io.BytesIO(excel_binary)
-            wb = load_workbook(excel_buffer)
+            wb = load_workbook(excel_buffer, keep_vba=True)
 
             # 創建新工作表或使用現有工作表
             sheet_name = 'OptionChain'
@@ -1632,7 +1537,7 @@ class StockProcess:
                 ws = wb[sheet_name]
                 # 清除舊數據
                 # wb.remove(ws)
-                for row in ws.iter_rows(min_row=1, min_col=1, max_row=2000, max_col=72):
+                for row in ws.iter_rows(min_row=1, min_col=1, max_row=2000, max_col=73):
                     for cell in row:
                         cell.value = None
 

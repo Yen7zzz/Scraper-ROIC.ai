@@ -142,7 +142,7 @@ class StockManager:
 
         for stock in self.stocks:
             if stock in self.option_excel_files:
-                output_filename = f"Option_{stock}.xlsx"
+                output_filename = f"Option_{stock}.xlsm"
                 output_path = os.path.join(output_folder, output_filename)
 
                 if self.processor.save_excel_to_file(self.option_excel_files[stock], output_path):

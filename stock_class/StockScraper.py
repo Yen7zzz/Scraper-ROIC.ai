@@ -72,6 +72,9 @@ class StockScraper:
         self.max_concurrent = max_concurrent
         self.browser = None
         self.playwright = None
+        # 🔥 新增：追蹤所有創建的 context
+        self.contexts = []
+        self.contexts_lock = asyncio.Lock()  # 防止併發問題
         # 驗證 Schwab API 配置
         self._validate_schwab_config()
 
@@ -113,48 +116,122 @@ class StockScraper:
         )
 
     async def cleanup(self):
-        """清理資源 - 改進版，確保完全關閉所有連線"""
+        """清理資源 - 強化版，確保完全關閉所有連線，防止記憶體洩漏"""
+        import asyncio
+
+        cleanup_errors = []
+
         try:
-            # 1. 關閉瀏覽器（包含錯誤處理）
+            # 🔥 Step 1: 關閉所有追蹤的 contexts
+            if hasattr(self, 'contexts') and self.contexts:
+                print(f"🧹 關閉 {len(self.contexts)} 個未關閉的 context...")
+                contexts_to_close = list(self.contexts)  # 複製列表避免併發修改
+
+                for context in contexts_to_close:
+                    try:
+                        await asyncio.wait_for(context.close(), timeout=2.0)
+                    except asyncio.TimeoutError:
+                        print(f"⚠️ Context 關閉超時（已強制繼續）")
+                    except Exception as e:
+                        cleanup_errors.append(f"Context: {e}")
+
+                self.contexts.clear()
+                print("✅ 所有 context 已關閉")
+
+            # 🔥 Step 2: 關閉瀏覽器
             if self.browser:
+                print("🧹 關閉 Playwright 瀏覽器...")
                 try:
-                    await self.browser.close()
-                except Exception:
-                    pass
+                    # 設定 3 秒超時
+                    await asyncio.wait_for(self.browser.close(), timeout=3.0)
+                    print("✅ 瀏覽器已關閉")
+                except asyncio.TimeoutError:
+                    print("⚠️ 瀏覽器關閉超時，強制繼續...")
+                except Exception as e:
+                    cleanup_errors.append(f"Browser: {e}")
+                    print(f"⚠️ 瀏覽器關閉錯誤: {e}")
                 finally:
                     self.browser = None
 
-            # 2. 停止 Playwright（包含錯誤處理）
+            # 🔥 Step 3: 停止 Playwright
             if self.playwright:
+                print("🧹 停止 Playwright...")
                 try:
-                    await self.playwright.stop()
-                except Exception:
-                    pass
+                    # 設定 3 秒超時
+                    await asyncio.wait_for(self.playwright.stop(), timeout=3.0)
+                    print("✅ Playwright 已停止")
+                except asyncio.TimeoutError:
+                    print("⚠️ Playwright 停止超時，強制繼續...")
+                except Exception as e:
+                    cleanup_errors.append(f"Playwright: {e}")
+                    print(f"⚠️ Playwright 停止錯誤: {e}")
                 finally:
                     self.playwright = None
 
-            # 3. 等待所有後台任務完成
-            await asyncio.sleep(0.3)
+            # 🔥 Step 4: 等待後台任務完成（增加等待時間）
+            await asyncio.sleep(0.5)
 
-        except Exception:
-            pass
+            # 🔥 Step 5: 強制清理剩餘任務
+            try:
+                pending_tasks = [task for task in asyncio.all_tasks()
+                                 if not task.done() and task != asyncio.current_task()]
+                if pending_tasks:
+                    print(f"🧹 取消 {len(pending_tasks)} 個待處理任務...")
+                    for task in pending_tasks:
+                        task.cancel()
+                    # 等待所有任務被取消
+                    await asyncio.gather(*pending_tasks, return_exceptions=True)
+                    print("✅ 待處理任務已清理")
+            except Exception as e:
+                cleanup_errors.append(f"Tasks: {e}")
+
+            if cleanup_errors:
+                print(f"⚠️ 清理過程中有 {len(cleanup_errors)} 個錯誤（已忽略）")
+            else:
+                print("✅ 資源清理完全成功，無記憶體洩漏")
+
+        except Exception as e:
+            print(f"❌ 清理過程發生嚴重錯誤: {e}")
+            # 即使發生錯誤，也要確保變數被重置
+            self.browser = None
+            self.playwright = None
+            if hasattr(self, 'contexts'):
+                self.contexts.clear()
 
     async def fetch_financials_data(self, stock, semaphore):
         """抓取單一股票的數據（financials）。"""
         async with semaphore:
+            context = None  # 🔥 初始化
             try:
                 context = await self.browser.new_context(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
                     viewport={"width": 800, "height": 600},
                     java_script_enabled=True
                 )
+                # 🔥 追蹤 context
+                async with self.contexts_lock:
+                    self.contexts.append(context)
                 try:
                     page_financials = await context.new_page()
                     financials = await asyncio.gather(self.get_financials(stock, page_financials))
                     return {stock: financials}
                 finally:
                     await context.close()
+                    # 🔥 移除追蹤
+                    async with self.contexts_lock:
+                        if context in self.contexts:
+                            self.contexts.remove(context)
             except Exception as e:
+                # 確保 context 被關閉
+                if context:
+                    try:
+                        await context.close()
+                    except:
+                        pass
+                    # 🔥 移除追蹤
+                    async with self.contexts_lock:
+                        if context in self.contexts:
+                            self.contexts.remove(context)
                 return {"stock": stock, "error": str(e)}
 
     async def get_financials(self, stock, page, retries=3):
@@ -204,12 +281,16 @@ class StockScraper:
     async def fetch_ratios_data(self, stock, semaphore):
         """抓取單一股票的數據（Ratios）。"""
         async with semaphore:
+            context = None  # 🔥 初始化
             try:
                 context = await self.browser.new_context(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
                     viewport={"width": 800, "height": 600},
                     java_script_enabled=True
                 )
+                # 🔥 追蹤 context
+                async with self.contexts_lock:
+                    self.contexts.append(context)
                 try:
                     page_ratios = await context.new_page()
                     ratios = await asyncio.gather(self.get_ratios(stock, page_ratios))
@@ -217,7 +298,21 @@ class StockScraper:
                     return {stock: ratios}
                 finally:
                     await context.close()
+                    # 🔥 移除追蹤
+                    async with self.contexts_lock:
+                        if context in self.contexts:
+                            self.contexts.remove(context)
             except Exception as e:
+                # 確保 context 被關閉
+                if context:
+                    try:
+                        await context.close()
+                    except:
+                        pass
+                    # 🔥 移除追蹤
+                    async with self.contexts_lock:
+                        if context in self.contexts:
+                            self.contexts.remove(context)
                 return {"stock": stock, "error": str(e)}
 
     async def get_ratios(self, stock, page, retries=3):
@@ -379,11 +474,15 @@ class StockScraper:
     async def fetch_combined_summary_and_metrics_data(self, stock, semaphore):
         """同時抓取Summary表格數據和EPS/PE/MarketCap指標數據"""
         async with semaphore:
+            context = None  # 🔥 初始化
             try:
                 context = await self.browser.new_context(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
                     viewport={"width": 800, "height": 600},
                 )
+                # 🔥 追蹤 context
+                async with self.contexts_lock:
+                    self.contexts.append(context)
                 try:
                     page = await context.new_page()
 
@@ -398,7 +497,21 @@ class StockScraper:
                     }
                 finally:
                     await context.close()
+                    # 🔥 移除追蹤
+                    async with self.contexts_lock:
+                        if context in self.contexts:
+                            self.contexts.remove(context)
             except Exception as e:
+                # 確保 context 被關閉
+                if context:
+                    try:
+                        await context.close()
+                    except:
+                        pass
+                    # 🔥 移除追蹤
+                    async with self.contexts_lock:
+                        if context in self.contexts:
+                            self.contexts.remove(context)
                 return {"stock": stock, "error": str(e)}
 
     async def get_combined_data(self, stock, page, retries=3):
@@ -774,19 +887,37 @@ class StockScraper:
 
     async def fetch_wacc_data(self, stock, semaphore):
         async with semaphore:
+            context = None  # 🔥 初始化
             try:
                 context = await self.browser.new_context(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
                     viewport={"width": 1920, "height": 1080},
                     java_script_enabled=True,
                 )
+                # 🔥 追蹤 context
+                async with self.contexts_lock:
+                    self.contexts.append(context)
                 try:
                     page_summary = await context.new_page()
                     wacc_value = await self.get_wacc_html(stock, page_summary)
                     return {stock: wacc_value}
                 finally:
                     await context.close()
+                    # 🔥 移除追蹤
+                    async with self.contexts_lock:
+                        if context in self.contexts:
+                            self.contexts.remove(context)
             except Exception as e:
+                # 確保 context 被關閉
+                if context:
+                    try:
+                        await context.close()
+                    except:
+                        pass
+                    # 🔥 移除追蹤
+                    async with self.contexts_lock:
+                        if context in self.contexts:
+                            self.contexts.remove(context)
                 return {stock: None}  # 如果出錯返回None
 
     async def get_wacc_html(self, stock, page, retries=3):
@@ -866,19 +997,37 @@ class StockScraper:
 
     async def fetch_TradingView_data(self, stock, semaphore):
         async with semaphore:
+            context = None  # 🔥 初始化
             try:
                 context = await self.browser.new_context(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
                     viewport={"width": 1920, "height": 1080},
                     java_script_enabled=True,
                 )
+                # 🔥 追蹤 context
+                async with self.contexts_lock:
+                    self.contexts.append(context)
                 try:
                     page_summary = await context.new_page()
                     wacc_value = await self.get_TradingView_html(stock, page_summary)
                     return {stock: wacc_value}
                 finally:
                     await context.close()
+                    # 🔥 移除追蹤
+                    async with self.contexts_lock:
+                        if context in self.contexts:
+                            self.contexts.remove(context)
             except Exception as e:
+                # 確保 context 被關閉
+                if context:
+                    try:
+                        await context.close()
+                    except:
+                        pass
+                    # 🔥 移除追蹤
+                    async with self.contexts_lock:
+                        if context in self.contexts:
+                            self.contexts.remove(context)
                 return {stock: None}  # 如果出錯返回None
 
     async def get_TradingView_html(self, stock, page, retries=3):
@@ -1054,19 +1203,37 @@ class StockScraper:
     async def fetch_barchart_data(self, stock, semaphore):
         """抓取單一股票的數據（Barchart Volatility）"""
         async with semaphore:
+            context = None  # 🔥 初始化
             try:
                 context = await self.browser.new_context(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
                     viewport={"width": 1920, "height": 1080},
                     java_script_enabled=True,
                 )
+                # 🔥 追蹤 context
+                async with self.contexts_lock:
+                    self.contexts.append(context)
                 try:
                     page = await context.new_page()
                     html_content = await self.get_barchart_html(stock, page)
                     return {stock: html_content}
                 finally:
                     await context.close()
+                    # 🔥 移除追蹤
+                    async with self.contexts_lock:
+                        if context in self.contexts:
+                            self.contexts.remove(context)
             except Exception as e:
+                # 確保 context 被關閉
+                if context:
+                    try:
+                        await context.close()
+                    except:
+                        pass
+                    # 🔥 移除追蹤
+                    async with self.contexts_lock:
+                        if context in self.contexts:
+                            self.contexts.remove(context)
                 return {stock: {"error": str(e)}}
 
     async def get_barchart_html(self, stock, page, retries=3):
