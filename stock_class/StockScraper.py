@@ -1,46 +1,42 @@
-# 在您的 stock_analyzer_gui.py 檔案最上方添加這段程式碼
-
-import os
+# 🔥 關鍵修復：必須在所有 import 之前設定事件循環策略
 import sys
+import os
+
+# Windows 特定修復：使用 Selector 事件循環
+if sys.platform == 'win32':
+    import asyncio
+
+    # 強制使用 ProactorEventLoop（比 SelectorEventLoop 更穩定）
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    print("✓ 已設定 Windows ProactorEventLoop 策略")
 
 
+# 設定 Playwright 路徑
 def setup_playwright_path():
     """設定 Playwright 瀏覽器路徑"""
-
-    # 如果是打包後的執行檔
     if hasattr(sys, '_MEIPASS'):
-        # PyInstaller 打包後的臨時資料夾
         base_path = sys._MEIPASS
-
-        # 設定瀏覽器路徑到打包後的位置
         browser_path = os.path.join(base_path, 'ms-playwright')
-
         if os.path.exists(browser_path):
             os.environ['PLAYWRIGHT_BROWSERS_PATH'] = browser_path
             print(f"設定瀏覽器路徑: {browser_path}")
         else:
-            # 嘗試原始路徑
             original_path = r'C:\Users\2993\AppData\Local\ms-playwright'
             if os.path.exists(original_path):
                 os.environ['PLAYWRIGHT_BROWSERS_PATH'] = original_path
                 print(f"使用原始瀏覽器路徑: {original_path}")
     else:
-        # 開發環境，使用原始路徑
         original_path = r'C:\Users\2993\AppData\Local\ms-playwright'
         if os.path.exists(original_path):
             os.environ['PLAYWRIGHT_BROWSERS_PATH'] = original_path
 
 
-# 在導入 playwright 之前呼叫這個函數
 setup_playwright_path()
 
-# 然後才導入 playwright
-from playwright.sync_api import sync_playwright
-
-import asyncio
+# 現在才導入 playwright 和其他模組
+from playwright.async_api import async_playwright
 import base64
 import io
-from playwright.async_api import async_playwright
 import pandas as pd
 import random
 from io import StringIO
@@ -51,18 +47,17 @@ import json
 import re
 import yfinance as yf
 
+
 # 自定義異常類別
 class TokenExpiredException(Exception):
     """Token 過期異常"""
     pass
 
+
 class StockScraper:
     def __init__(self, stocks, config=None, headless=True, max_concurrent=5):
         """
         初始化爬蟲類別。
-        stocks: 股票代碼的列表
-        headless: 是否使用無頭模式
-        max_concurrent: 同時執行的股票數量（控制併發數）
         """
         self.stocks = stocks.get('final_stocks')
         self.us_stocks = stocks.get('us_stocks')
@@ -72,10 +67,8 @@ class StockScraper:
         self.max_concurrent = max_concurrent
         self.browser = None
         self.playwright = None
-        # 🔥 新增：追蹤所有創建的 context
         self.contexts = []
-        self.contexts_lock = asyncio.Lock()  # 防止併發問題
-        # 驗證 Schwab API 配置
+        self.contexts_lock = asyncio.Lock()
         self._validate_schwab_config()
 
     def _validate_schwab_config(self):
@@ -98,22 +91,35 @@ class StockScraper:
             self.schwab_available = True
 
     async def setup_browser(self):
-        """設定瀏覽器環境。"""
-        self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(
-            headless=self.headless,
-            args=[
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-accelerated-2d-canvas",
-                "--disable-gpu",
-                "--disable-features=IsolateOrigins,site-per-process",
-                "--disable-background-timer-throttling",
-                "--disable-blink-features=AutomationControlled",  # 新增：隱藏自動化標記
-                "--exclude-switches=enable-automation",  # 新增：移除automation開關
-            ],
-        )
+        """設定瀏覽器環境 - 修復版"""
+        try:
+            print("🔧 正在啟動 Playwright...")
+
+            # 🔥 關鍵修復：確保在正確的事件循環中啟動
+            self.playwright = await async_playwright().start()
+
+            print("🔧 正在啟動 Chromium...")
+            self.browser = await self.playwright.chromium.launch(
+                headless=self.headless,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-accelerated-2d-canvas",
+                    "--disable-gpu",
+                    "--disable-features=IsolateOrigins,site-per-process",
+                    "--disable-background-timer-throttling",
+                    "--disable-blink-features=AutomationControlled",
+                    "--exclude-switches=enable-automation",
+                ],
+            )
+            print("✅ 瀏覽器啟動成功")
+
+        except Exception as e:
+            print(f"❌ 瀏覽器啟動失敗: {e}")
+            import traceback
+            traceback.print_exc()
+            raise e
 
     async def cleanup(self):
         """清理資源 - 強化版，確保完全關閉所有連線，防止記憶體洩漏"""

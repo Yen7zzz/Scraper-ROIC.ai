@@ -694,54 +694,72 @@ def check_and_setup_config():
             print("❌ 用戶取消設定，程式退出")
             return None, False
 
-    # 配置和 Token 都存在，檢查 Token 是否有效
-    is_valid, remaining_hours, expiry_time = config_manager.is_token_valid(buffer_days=1)
+    # 🔥 新增：驗證 Token 是否真的可用（實際調用 API 測試）
+    config = config_manager.load_config()
+    if config:
+        print("✅ 已載入現有配置和 Token")
 
-    if not is_valid:
-        # Token 即將過期或已過期
-        expiry_info = config_manager.get_token_expiry_info()
+        # 檢查本地 Token 過期時間
+        is_valid, remaining_hours, expiry_time = config_manager.is_token_valid(buffer_days=1)
 
-        if remaining_hours < 0:
-            # 已過期 - 自動刪除並重新認證（不詢問）
-            print(f"❌ Token 已過期")
-            print(expiry_info)
-            config_manager.delete_token()
-            print("⚠️ 需要重新認證...")
+        if is_valid:
+            # 本地檢查通過，顯示剩餘時間
+            days = remaining_hours / 24
+            print(f"📅 Token 剩餘有效期：{days:.1f} 天")
 
-            setup_window = OAuthSetupWindow()
-            success = setup_window.run()
+            # 🔥 新增：實際測試 Token（可選）
+            print("🔍 正在驗證 Token 是否真的可用...")
+            token_works = test_schwab_token(config, config_manager.tokens_path)
 
-            if success:
-                config = config_manager.load_config()
-                return config, True
+            if not token_works:
+                print("❌ Token 驗證失敗（伺服器拒絕）")
+                print("⚠️ 需要重新認證...")
+
+                # 創建臨時視窗詢問用戶
+                temp_root = tk.Tk()
+                temp_root.withdraw()
+
+                response = messagebox.askyesno(
+                    "❌ Token 認證失敗",
+                    "Schwab 伺服器拒絕了你的 Token。\n\n"
+                    "可能原因：\n"
+                    "• Token 已被伺服器撤銷\n"
+                    "• 帳號在其他地方登入\n"
+                    "• Schwab 系統維護\n\n"
+                    "是否立即重新認證？",
+                    icon='error'
+                )
+
+                temp_root.destroy()
+
+                if response:
+                    # 刪除舊 Token 並重新認證
+                    config_manager.delete_token()
+                    setup_window = OAuthSetupWindow()
+                    success = setup_window.run()
+
+                    if success:
+                        config = config_manager.load_config()
+                        return config, True
+                    else:
+                        print("❌ 用戶取消設定，程式退出")
+                        return None, False
+                else:
+                    print("⚠️ 用戶選擇繼續（可能會在使用時失敗）")
+                    return config, True
             else:
-                print("❌ 用戶取消設定，程式退出")
-                return None, False
-
+                print("✅ Token 驗證成功，可以正常使用")
+                return config, True
         else:
-            # 即將過期 - 詢問用戶是否重新認證
-            print(f"⚠️ Token 即將過期")
-            print(expiry_info)
+            # Token 即將過期或已過期
+            expiry_info = config_manager.get_token_expiry_info()
 
-            # 創建臨時視窗來顯示對話框
-            temp_root = tk.Tk()
-            temp_root.withdraw()  # 隱藏主視窗
-
-            # 顯示詢問對話框
-            response = messagebox.askyesno(
-                "⚠️ Token 即將過期",
-                f"{expiry_info}\n\n"
-                "建議現在重新認證以避免後續錯誤。\n\n"
-                "是否立即重新認證？",
-                icon='warning'
-            )
-
-            temp_root.destroy()
-
-            if response:
-                # 用戶選擇重新認證
-                print("🔄 用戶選擇重新認證...")
+            if remaining_hours < 0:
+                # 已過期 - 自動重新認證
+                print(f"❌ Token 已過期")
+                print(expiry_info)
                 config_manager.delete_token()
+                print("⚠️ 需要重新認證...")
 
                 setup_window = OAuthSetupWindow()
                 success = setup_window.run()
@@ -753,22 +771,98 @@ def check_and_setup_config():
                     print("❌ 用戶取消設定，程式退出")
                     return None, False
             else:
-                # 用戶選擇稍後再說
-                print("⚠️ 用戶選擇繼續使用（Token 可能在使用時失效）")
-                config = config_manager.load_config()
-                return config, True
+                # 即將過期 - 詢問用戶
+                print(f"⚠️ Token 即將過期")
+                print(expiry_info)
 
-    # Token 有效
-    config = config_manager.load_config()
-    if config:
-        print("✅ 已載入現有配置和 Token")
-        # 顯示剩餘時間（可選）
-        days = remaining_hours / 24
-        print(f"📅 Token 剩餘有效期：{days:.1f} 天")
-        return config, True
+                temp_root = tk.Tk()
+                temp_root.withdraw()
+
+                response = messagebox.askyesno(
+                    "⚠️ Token 即將過期",
+                    f"{expiry_info}\n\n"
+                    "建議現在重新認證以避免後續錯誤。\n\n"
+                    "是否立即重新認證？",
+                    icon='warning'
+                )
+
+                temp_root.destroy()
+
+                if response:
+                    config_manager.delete_token()
+                    setup_window = OAuthSetupWindow()
+                    success = setup_window.run()
+
+                    if success:
+                        config = config_manager.load_config()
+                        return config, True
+                    else:
+                        print("❌ 用戶取消設定，程式退出")
+                        return None, False
+                else:
+                    print("⚠️ 用戶選擇繼續使用（Token 可能在使用時失效）")
+                    return config, True
     else:
         print("❌ 載入配置失敗")
         return None, False
+
+
+def test_schwab_token(config, tokens_path):
+    """
+    實際測試 Schwab Token 是否可用
+
+    返回:
+        bool: True 表示 Token 有效，False 表示無效
+    """
+    try:
+        import schwabdev
+
+        # 創建客戶端（不會觸發瀏覽器）
+        client = schwabdev.Client(
+            config['app_key'],
+            config['app_secret'],
+            tokens_file=tokens_path
+        )
+
+        # 🔥 嘗試調用簡單的 API 來驗證 Token
+        # 使用最簡單的 API：獲取市場時間
+        try:
+            response = client.market_hours('equity')
+
+            # 檢查回應
+            if hasattr(response, 'status_code'):
+                if response.status_code == 200:
+                    print("✓ Token 驗證：API 調用成功")
+                    return True
+                elif response.status_code == 401:
+                    print("✗ Token 驗證：認證失敗 (401)")
+                    return False
+                else:
+                    print(f"✗ Token 驗證：API 返回狀態碼 {response.status_code}")
+                    return False
+            else:
+                # 如果回應正常但沒有 status_code，假設成功
+                print("✓ Token 驗證：API 回應正常")
+                return True
+
+        except Exception as api_error:
+            error_str = str(api_error).lower()
+
+            # 檢查錯誤訊息中的關鍵字
+            if 'refresh_token_authentication_error' in error_str or \
+                    'unsupported_token_type' in error_str or \
+                    '401' in error_str:
+                print(f"✗ Token 驗證失敗：{api_error}")
+                return False
+            else:
+                # 其他錯誤（可能是網路問題），保守處理
+                print(f"⚠️ Token 驗證時發生錯誤（假設有效）：{api_error}")
+                return True
+
+    except Exception as e:
+        # 如果連客戶端都無法創建，返回 False
+        print(f"❌ 無法創建 Schwab 客戶端：{e}")
+        return False
 
 
 # 測試用

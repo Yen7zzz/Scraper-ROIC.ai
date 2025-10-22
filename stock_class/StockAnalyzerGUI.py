@@ -1,3 +1,4 @@
+
 import warnings
 import sys
 import tkinter as tk
@@ -7,26 +8,29 @@ import asyncio
 import os
 from datetime import datetime
 import time
+
+# 🔥 關鍵修復：抑制警告
+warnings.filterwarnings('ignore', category=ResourceWarning)
+warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
+warnings.filterwarnings('ignore', category=DeprecationWarning)
+
+# 🔥 修復：Windows 事件循環策略設定
+if sys.platform == 'win32':
+    # 強制使用 ProactorEventLoop
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        print("✓ GUI: 已設定 Windows ProactorEventLoop 策略")
+    except AttributeError:
+        # Python 3.7 或更早版本
+        pass
+
+# 在事件循環設定完成後才導入其他模組
 from excel_template.fundamental_excel_template import Fundamental_Excel_Template_Base64
 from excel_template.option_chain_excel_template import Option_Chain_Excel_Template_Base64
 from stock_class.StockScraper import StockScraper
 from stock_class.StockProcess import StockProcess
 from stock_class.StockManager import StockManager
 from stock_class.StockValidator import StockValidator
-
-# 🔥 抑制不必要的警告
-warnings.filterwarnings('ignore', category=ResourceWarning)
-warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
-warnings.filterwarnings('ignore', category=DeprecationWarning)
-
-# 🔥 Windows 特定：使用 Selector 事件循環策略（更穩定）
-if sys.platform == 'win32':
-    # 對於 Python 3.8+
-    try:
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    except AttributeError:
-        # Python 3.7 或更早版本
-        pass
 
 # ====== GUI 部分 ======
 class StockAnalyzerGUI:
@@ -798,24 +802,34 @@ class StockAnalyzerGUI:
             self.log(f"⚠️ 停止過程中發生錯誤，但UI已恢復: {e}")
 
     def run_analysis(self, stocks):
-        """執行分析的主函數"""
+        """執行分析的主函數 - 修復版"""
         try:
-            # 創建新的事件循環並記錄引用
+            # 🔥 關鍵修復：確保舊的事件循環完全關閉
+            try:
+                old_loop = asyncio.get_event_loop()
+                if old_loop and not old_loop.is_closed():
+                    old_loop.close()
+            except RuntimeError:
+                pass
+
+            # 🔥 創建全新的事件循環
             self.event_loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.event_loop)
 
-            # 執行異步分析並記錄任務引用
+            print("✓ 新的事件循環已創建並設定")
+
+            # 執行異步分析
             self.current_task = self.event_loop.create_task(self.async_analysis(stocks))
             self.event_loop.run_until_complete(self.current_task)
 
         except asyncio.CancelledError:
-            # 處理任務被取消的情況
             self.log("🛑 異步任務已被成功取消")
 
         except Exception as e:
-            # 只有在系統仍在運行時才顯示錯誤
             if self.is_running:
                 self.log(f"❌ 發生錯誤：{str(e)}")
+                import traceback
+                traceback.print_exc()
                 messagebox.showerror("❌ 錯誤", f"爬蟲過程中發生錯誤：\n{str(e)}")
             else:
                 self.log("ℹ️ 爬蟲已被使用者停止")
@@ -824,7 +838,28 @@ class StockAnalyzerGUI:
             # 清理資源
             self.current_task = None
             self.current_thread = None
-            self.event_loop = None
+
+            # 🔥 確保事件循環正確關閉
+            if self.event_loop:
+                try:
+                    # 取消所有待處理任務
+                    pending = asyncio.all_tasks(self.event_loop)
+                    for task in pending:
+                        task.cancel()
+
+                    # 等待任務完成
+                    if pending:
+                        self.event_loop.run_until_complete(
+                            asyncio.gather(*pending, return_exceptions=True)
+                        )
+
+                    # 關閉事件循環
+                    self.event_loop.close()
+                    print("✓ 事件循環已正確關閉")
+                except Exception as e:
+                    print(f"⚠️ 關閉事件循環時發生錯誤: {e}")
+                finally:
+                    self.event_loop = None
 
             # 只有在系統仍在運行時才恢復UI
             if self.is_running:
