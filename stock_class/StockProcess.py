@@ -12,7 +12,9 @@ import yfinance as yf
 from excel_template.fundamental_excel_template import Fundamental_Excel_Template_Base64
 from excel_template.option_chain_excel_template import Option_Chain_Excel_Template_Base64
 from stock_class.RareLimitManager import RateLimitManager
-
+import os
+import tempfile
+import xlwings as xw
 class StockProcess:
     def __init__(self, max_concurrent=2, request_delay=2.0):
         # 將 semaphore 移到類別層級，確保全域限制
@@ -743,6 +745,60 @@ class StockProcess:
         except Exception as e:
             return None, f"寫入 {stock} 的TradingView數據時發生錯誤: {e}"
 
+    def write_beta_to_option_excel(self, stock, beta_value, excel_base64):
+        """將Beta值寫入選擇權Excel的第二個工作表C8儲存格 - 使用xlwings"""
+        try:
+            print(f"正在處理 {stock} 的Beta值（選擇權模板）: {beta_value}")
+
+            # 解碼並創建臨時檔案
+            excel_binary = base64.b64decode(excel_base64)
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsm') as tmp_file:
+                tmp_file.write(excel_binary)
+                tmp_path = tmp_file.name
+
+            try:
+                # 用 xlwings 打開
+                app = xw.App(visible=False)
+                wb = app.books.open(tmp_path)
+                ws = wb.sheets[1]  # 第二個工作表
+
+                # 清除舊資料
+                ws.range('C8').value = None
+                wb.save()
+
+                # 檢查是否有原始數據
+                if beta_value is None:
+                    wb.close()
+                    app.quit()
+
+                    # 讀取回 base64
+                    with open(tmp_path, 'rb') as f:
+                        cleaned_binary = f.read()
+                    cleaned_base64 = base64.b64encode(cleaned_binary).decode('utf-8')
+
+                    return cleaned_base64, f'Beta: {stock} 無原始資料，已清空舊數據'
+
+                # 寫入Beta值
+                ws.range('C8').value = beta_value
+                wb.save()
+                wb.close()
+                app.quit()
+
+                # 讀取回 base64
+                with open(tmp_path, 'rb') as f:
+                    modified_binary = f.read()
+                modified_base64 = base64.b64encode(modified_binary).decode('utf-8')
+
+                return modified_base64, f"成功將 {stock} 的Beta值 {beta_value} 寫入選擇權模板 (C8)"
+
+            finally:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+
+        except Exception as e:
+            return excel_base64, f"❌ 處理 {stock} 的Beta資料時發生錯誤: {e}"
+
     def write_seekingalpha_data_to_excel(self, stock, raw_revenue_growth, excel_base64):
         """將revenue_growth數據寫入Excel"""
         try:
@@ -841,139 +897,147 @@ class StockProcess:
             return False
 
     def create_option_excel_from_base64(self, stock):
-        """從base64模板創建選擇權Excel文件的base64"""
+        """從base64模板創建選擇權Excel文件的base64 - 使用xlwings"""
         try:
             if Option_Chain_Excel_Template_Base64.strip() == "" or "請將您從轉換工具得到的" in Option_Chain_Excel_Template_Base64:
                 return "", "❌ 錯誤：請先設定 Option_Chain_Excel_Template_Base64 變數"
 
+            # 解碼 base64 並創建臨時檔案
             excel_binary = base64.b64decode(Option_Chain_Excel_Template_Base64.strip())
-            excel_buffer = io.BytesIO(excel_binary)
-            workbook = load_workbook(excel_buffer, keep_vba=True)
 
-            # 儲存修改後的檔案到記憶體
-            output_buffer = io.BytesIO()
-            workbook.save(output_buffer)
-            output_buffer.seek(0)
-            excel_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsm') as tmp_file:
+                tmp_file.write(excel_binary)
+                tmp_path = tmp_file.name
 
-            return excel_base64, f"成功為 {stock} 創建選擇權Excel檔案"
+            try:
+                # 用 xlwings 打開並立即關閉（確保格式正確）
+                app = xw.App(visible=False)
+                wb = app.books.open(tmp_path)
+                wb.save()
+                wb.close()
+                app.quit()
+
+                # 讀取回 base64
+                with open(tmp_path, 'rb') as f:
+                    modified_binary = f.read()
+
+                excel_base64 = base64.b64encode(modified_binary).decode('utf-8')
+
+                return excel_base64, f"成功為 {stock} 創建選擇權Excel檔案"
+
+            finally:
+                # 清理臨時檔案
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
 
         except Exception as e:
             return "", f"創建選擇權Excel檔案時發生錯誤: {e}"
 
     def write_barchart_data_to_excel(self, stock, barchart_text, excel_base64):
-        """將Barchart波動率數據寫入選擇權Excel base64"""
+        """將Barchart波動率數據寫入選擇權Excel base64 - 使用xlwings"""
         try:
             print(f"正在處理 {stock} 的Barchart數據")
 
-            # 解碼Excel
+            # 解碼並創建臨時檔案
             excel_binary = base64.b64decode(excel_base64)
-            excel_buffer = io.BytesIO(excel_binary)
-            wb = load_workbook(excel_buffer, keep_vba=True)
-            ws = wb.worksheets[1]  # 使用第一個工作表
 
-            # 清除舊資料
-            ws['C3'] = None
-            ws['C4'] = None
-            ws['C5'] = None
-            ws['C6'] = None
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsm') as tmp_file:
+                tmp_file.write(excel_binary)
+                tmp_path = tmp_file.name
 
-            # 立即保存清除後的版本
-            output_buffer = io.BytesIO()
-            wb.save(output_buffer)
-            output_buffer.seek(0)
-            cleaned_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
-
-            # 檢查是否有原始數據
-            if not barchart_text or isinstance(barchart_text, dict):
-                return cleaned_base64, f'Barchart: {stock} 無原始資料，已清空舊數據'
-
-            # 解析字串提取數值
-            # 範例字串: "Implied Volatility: IV:  41.28%      Historic Volatility: HV:  25.39%     IV Rank: 17.46%      IV Percentile: IV Pctl:  43%"
-
-            iv_match = re.search(r'IV:\s*(\d+\.?\d*)%', barchart_text)
-            hv_match = re.search(r'HV:\s*(\d+\.?\d*)%', barchart_text)
-            iv_pctl_match = re.search(r'IV Pctl:\s*(\d+\.?\d*)%', barchart_text)
-            iv_rank_match = re.search(r'IV Rank:\s*(\d+\.?\d*)%', barchart_text)
-
-            # 提取數值並轉換為小數格式
-            iv_value = float(iv_match.group(1)) / 100 if iv_match else None
-            hv_value = float(hv_match.group(1)) / 100 if hv_match else None
-            iv_pctl_value = float(iv_pctl_match.group(1)) / 100 if iv_pctl_match else None
-            iv_rank_value = float(iv_rank_match.group(1)) / 100 if iv_rank_match else None
-
-            # 檢查是否所有數值都無法提取
-            if all(v is None for v in [iv_value, hv_value, iv_pctl_value, iv_rank_value]):
-                return cleaned_base64, f'❌ {stock} 無法提取Barchart數據，網頁HTML結構可能已改變'
-
-            # 重新載入Excel以寫入數據
-            excel_binary = base64.b64decode(cleaned_base64)
-            excel_buffer = io.BytesIO(excel_binary)
-            wb = load_workbook(excel_buffer, keep_vba=True)
-            ws = wb.worksheets[1]
-
-            # 寫入數值到指定儲存格
-            ws['C3'] = iv_value  # Total IV
-            ws['C4'] = hv_value  # Total HV
-            ws['C5'] = iv_pctl_value  # Total IV Percentile
-            ws['C6'] = iv_rank_value  # Total IV Rank
-
-            # 保存修改後的Excel
-            output_buffer = io.BytesIO()
-            wb.save(output_buffer)
-            output_buffer.seek(0)
-            modified_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
-
-            # 構建成功訊息
-            extracted_values = []
-            if iv_value is not None:
-                extracted_values.append(f"IV={iv_value:.4f}")
-            if hv_value is not None:
-                extracted_values.append(f"HV={hv_value:.4f}")
-            if iv_pctl_value is not None:
-                extracted_values.append(f"IV Pctl={iv_pctl_value:.4f}")
-            if iv_rank_value is not None:
-                extracted_values.append(f"IV Rank={iv_rank_value:.4f}")
-
-            success_msg = f"成功將 {stock} 的Barchart數據寫入Excel ({', '.join(extracted_values)})"
-
-            # 如果有部分數值無法提取，添加警告
-            if None in [iv_value, hv_value, iv_pctl_value, iv_rank_value]:
-                missing = []
-                if iv_value is None:
-                    missing.append("IV")
-                if hv_value is None:
-                    missing.append("HV")
-                if iv_pctl_value is None:
-                    missing.append("IV Pctl")
-                if iv_rank_value is None:
-                    missing.append("IV Rank")
-                success_msg += f" [警告: 無法提取 {', '.join(missing)}]"
-
-            return modified_base64, success_msg
-
-        except Exception as e:
-            # 錯誤處理：返回清除後的版本
             try:
-                excel_binary = base64.b64decode(excel_base64)
-                excel_buffer = io.BytesIO(excel_binary)
-                wb = load_workbook(excel_buffer, keep_vba=True)
-                ws = wb.worksheets[0]
+                # 用 xlwings 打開
+                app = xw.App(visible=False)
+                wb = app.books.open(tmp_path)
+                ws = wb.sheets[1]  # 第二個工作表
 
                 # 清除舊資料
-                ws['D27'] = None
-                ws['D28'] = None
-                ws['D29'] = None
-                ws['D30'] = None
+                ws.range('C3').value = None
+                ws.range('C4').value = None
+                ws.range('C5').value = None
+                ws.range('C6').value = None
+                wb.save()
 
-                output_buffer = io.BytesIO()
-                wb.save(output_buffer)
-                output_buffer.seek(0)
-                cleaned_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
+                # 檢查是否有原始數據
+                if not barchart_text or isinstance(barchart_text, dict):
+                    wb.close()
+                    app.quit()
 
-                return cleaned_base64, f"❌ 寫入 {stock} 的Barchart數據時發生錯誤: {e}"
-            except:
-                return excel_base64, f"❌ 處理 {stock} 的Barchart資料時發生嚴重錯誤: {e}"
+                    with open(tmp_path, 'rb') as f:
+                        cleaned_binary = f.read()
+                    cleaned_base64 = base64.b64encode(cleaned_binary).decode('utf-8')
+
+                    return cleaned_base64, f'Barchart: {stock} 無原始資料，已清空舊數據'
+
+                # 解析字串提取數值
+                iv_match = re.search(r'IV:\s*(\d+\.?\d*)%', barchart_text)
+                hv_match = re.search(r'HV:\s*(\d+\.?\d*)%', barchart_text)
+                iv_pctl_match = re.search(r'IV Pctl:\s*(\d+\.?\d*)%', barchart_text)
+                iv_rank_match = re.search(r'IV Rank:\s*(\d+\.?\d*)%', barchart_text)
+
+                iv_value = float(iv_match.group(1)) / 100 if iv_match else None
+                hv_value = float(hv_match.group(1)) / 100 if hv_match else None
+                iv_pctl_value = float(iv_pctl_match.group(1)) / 100 if iv_pctl_match else None
+                iv_rank_value = float(iv_rank_match.group(1)) / 100 if iv_rank_match else None
+
+                if all(v is None for v in [iv_value, hv_value, iv_pctl_value, iv_rank_value]):
+                    wb.close()
+                    app.quit()
+
+                    with open(tmp_path, 'rb') as f:
+                        cleaned_binary = f.read()
+                    cleaned_base64 = base64.b64encode(cleaned_binary).decode('utf-8')
+
+                    return cleaned_base64, f'❌ {stock} 無法提取Barchart數據，網頁HTML結構可能已改變'
+
+                # 寫入數值
+                ws.range('C3').value = iv_value
+                ws.range('C4').value = hv_value
+                ws.range('C5').value = iv_pctl_value
+                ws.range('C6').value = iv_rank_value
+
+                wb.save()
+                wb.close()
+                app.quit()
+
+                # 讀取回 base64
+                with open(tmp_path, 'rb') as f:
+                    modified_binary = f.read()
+                modified_base64 = base64.b64encode(modified_binary).decode('utf-8')
+
+                # 構建成功訊息
+                extracted_values = []
+                if iv_value is not None:
+                    extracted_values.append(f"IV={iv_value:.4f}")
+                if hv_value is not None:
+                    extracted_values.append(f"HV={hv_value:.4f}")
+                if iv_pctl_value is not None:
+                    extracted_values.append(f"IV Pctl={iv_pctl_value:.4f}")
+                if iv_rank_value is not None:
+                    extracted_values.append(f"IV Rank={iv_rank_value:.4f}")
+
+                success_msg = f"成功將 {stock} 的Barchart數據寫入Excel ({', '.join(extracted_values)})"
+
+                if None in [iv_value, hv_value, iv_pctl_value, iv_rank_value]:
+                    missing = []
+                    if iv_value is None:
+                        missing.append("IV")
+                    if hv_value is None:
+                        missing.append("HV")
+                    if iv_pctl_value is None:
+                        missing.append("IV Pctl")
+                    if iv_rank_value is None:
+                        missing.append("IV Rank")
+                    success_msg += f" [警告: 無法提取 {', '.join(missing)}]"
+
+                return modified_base64, success_msg
+
+            finally:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+
+        except Exception as e:
+            return excel_base64, f"❌ 處理 {stock} 的Barchart資料時發生錯誤: {e}"
 
     def flatten_option_chain(self, option_data, stock):
         """
@@ -1517,82 +1581,60 @@ class StockProcess:
         return df
 
     def write_option_chain_to_excel(self, stock, option_df, excel_base64):
-        """
-        將選擇權鏈DataFrame寫入Excel base64
-        """
+        """將選擇權鏈DataFrame寫入Excel base64 - 使用xlwings"""
         try:
             if option_df is None or option_df.empty:
                 return excel_base64, f"{stock} 選擇權數據為空"
 
             print(f"準備寫入 {stock} 的選擇權數據: {len(option_df)} 筆合約, {len(option_df.columns)} 個欄位")
 
-            # 解碼Excel
+            # 解碼並創建臨時檔案
             excel_binary = base64.b64decode(excel_base64)
-            excel_buffer = io.BytesIO(excel_binary)
-            wb = load_workbook(excel_buffer, keep_vba=True)
 
-            # 創建新工作表或使用現有工作表
-            sheet_name = 'OptionChain'
-            if sheet_name in wb.sheetnames:
-                ws = wb[sheet_name]
-                # 清除舊數據
-                # wb.remove(ws)
-                for row in ws.iter_rows(min_row=1, min_col=1, max_row=2000, max_col=73):
-                    for cell in row:
-                        cell.value = None
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsm') as tmp_file:
+                tmp_file.write(excel_binary)
+                tmp_path = tmp_file.name
 
-            # 寫入表頭
-            for col_idx, column_name in enumerate(option_df.columns, 1):
-                cell = ws.cell(row=1, column=col_idx, value=str(column_name))
-                cell.font = Font(bold=True, size=11)
+            try:
+                # 用 xlwings 打開
+                app = xw.App(visible=False)
+                wb = app.books.open(tmp_path)
 
-            # 寫入數據行
-            for row_idx, row_data in enumerate(option_df.values, 2):
-                for col_idx, value in enumerate(row_data, 1):
-                    # 🔧 關鍵修復：確保所有值都是Excel兼容的
-                    try:
-                        # 處理不同類型的值
-                        if pd.isna(value):
-                            cell_value = None
-                        elif isinstance(value, (int, float, str, bool)):
-                            cell_value = value
-                        elif isinstance(value, (dict, list)):
-                            # 如果還是遇到複雜類型，轉換為JSON字串
-                            import json
-                            cell_value = json.dumps(value, ensure_ascii=False)
-                        else:
-                            # 其他類型轉為字串
-                            cell_value = str(value)
+                # 找到或創建 OptionChain 工作表
+                sheet_name = 'OptionChain'
+                if sheet_name in [sheet.name for sheet in wb.sheets]:
+                    ws = wb.sheets[sheet_name]
+                    # 清除舊數據
+                    ws.clear()
+                else:
+                    ws = wb.sheets.add(sheet_name)
 
-                        ws.cell(row=row_idx, column=col_idx, value=cell_value)
+                # 寫入 DataFrame（xlwings 可以直接寫入 DataFrame）
+                ws.range('A1').options(index=False).value = option_df
 
-                    except Exception as cell_error:
-                        # 如果單個儲存格寫入失敗，記錄錯誤但繼續
-                        print(f"警告: 寫入儲存格 ({row_idx}, {col_idx}) 時發生錯誤: {cell_error}")
-                        ws.cell(row=row_idx, column=col_idx, value=str(value))
+                # 設置表頭格式
+                header_range = ws.range(f'A1:{ws.range("A1").end("right").address}')
+                header_range.font.bold = True
+                header_range.font.size = 11
 
-            # 調整欄位寬度
-            for column in ws.columns:
-                max_length = 0
-                column_letter = column[0].column_letter
-                for cell in column:
-                    try:
-                        if cell.value and len(str(cell.value)) > max_length:
-                            max_length = len(str(cell.value))
-                    except:
-                        pass
-                # 設定最小寬度10，最大寬度50
-                adjusted_width = min(max(max_length + 2, 10), 50)
-                ws.column_dimensions[column_letter].width = adjusted_width
+                # 自動調整欄寬
+                ws.autofit(axis='columns')
 
-            # 保存到base64
-            output_buffer = io.BytesIO()
-            wb.save(output_buffer)
-            output_buffer.seek(0)
-            modified_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
+                wb.save()
+                wb.close()
+                app.quit()
 
-            print(f"✅ 成功寫入 {stock} 的選擇權數據到Excel")
-            return modified_base64, f"✅ 成功將 {stock} 的選擇權數據寫入Excel ({len(option_df)} 筆合約)"
+                # 讀取回 base64
+                with open(tmp_path, 'rb') as f:
+                    modified_binary = f.read()
+                modified_base64 = base64.b64encode(modified_binary).decode('utf-8')
+
+                print(f"✅ 成功寫入 {stock} 的選擇權數據到Excel")
+                return modified_base64, f"✅ 成功將 {stock} 的選擇權數據寫入Excel ({len(option_df)} 筆合約)"
+
+            finally:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
 
         except Exception as e:
             print(f"❌ 寫入 {stock} 選擇權數據時發生錯誤: {e}")

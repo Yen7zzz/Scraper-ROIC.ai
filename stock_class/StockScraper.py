@@ -1206,6 +1206,130 @@ class StockScraper:
             await self.cleanup()
         return result
 
+    async def fetch_beta_data(self, stock, semaphore):
+        """抓取單一股票的Beta值（TradingView）"""
+        async with semaphore:
+            context = None
+            try:
+                context = await self.browser.new_context(
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+                    viewport={"width": 1920, "height": 1080},
+                    java_script_enabled=True,
+                )
+                async with self.contexts_lock:
+                    self.contexts.append(context)
+                try:
+                    page = await context.new_page()
+                    beta_value = await self.get_beta_html(stock, page)
+                    return {stock: beta_value}
+                finally:
+                    await context.close()
+                    async with self.contexts_lock:
+                        if context in self.contexts:
+                            self.contexts.remove(context)
+            except Exception as e:
+                if context:
+                    try:
+                        await context.close()
+                    except:
+                        pass
+                    async with self.contexts_lock:
+                        if context in self.contexts:
+                            self.contexts.remove(context)
+                return {stock: None}
+
+    async def get_beta_html(self, stock, page, retries=3):
+        """抓取特定股票的Beta值"""
+        # 處理交易所名稱
+        url_stock_exchange = yf.Ticker(stock).info.get('fullExchangeName', None)
+        if url_stock_exchange in ['NasdaqGS', 'NasdaqGM', 'NasdaqCM']:
+            url_stock_exchange = 'NASDAQ'
+
+        # 處理股票代碼中的特殊字符
+        if '-' in stock:
+            stock_symbol = ''.join(['.' if char == '-' else char for char in stock])
+        else:
+            stock_symbol = stock
+
+        URL = f'https://tw.tradingview.com/symbols/{url_stock_exchange}-{stock_symbol}/'
+        attempt = 0
+
+        while attempt < retries:
+            try:
+                print(f"正在抓取 {stock} 的 Beta 值 (第 {attempt + 1} 次)...")
+
+                await asyncio.sleep(random.uniform(2, 5))
+                await page.goto(URL, wait_until='domcontentloaded', timeout=60000)
+
+                # 等待頁面載入
+                await asyncio.sleep(3)
+
+                content = await page.content()
+                soup = BeautifulSoup(content, 'html.parser')
+
+                # 方法1: 尋找包含 "Beta" 文字的區塊，然後找相鄰的數值
+                beta_section = None
+                all_wrappers = soup.find_all('div', class_='wrapper-QCJM7wcY')
+
+                for wrapper in all_wrappers:
+                    # 檢查是否包含 "Beta" 文字（可能在附近的元素）
+                    parent = wrapper.find_parent()
+                    if parent and 'beta' in parent.get_text().lower():
+                        beta_section = wrapper
+                        break
+
+                if beta_section:
+                    value_div = beta_section.find('div', class_='value-QCJM7wcY')
+                    if value_div:
+                        beta_text = value_div.get_text(strip=True)
+                        try:
+                            beta_value = float(beta_text)
+                            print(f"✓ 成功獲取 {stock} 的 Beta 值: {beta_value}")
+                            return beta_value
+                        except ValueError:
+                            print(f"⚠️ 無法轉換 Beta 值為數字: {beta_text}")
+
+                # 方法2: 備用方案 - 使用更寬鬆的搜尋
+                # 尋找所有可能的數值，並根據上下文判斷
+                for wrapper in all_wrappers:
+                    value_div = wrapper.find('div', class_='value-QCJM7wcY')
+                    if value_div:
+                        value_text = value_div.get_text(strip=True)
+                        # Beta 通常在 0.5 到 3.0 之間
+                        try:
+                            value_float = float(value_text)
+                            if 0.1 <= value_float <= 5.0:
+                                # 檢查附近是否有 Beta 關鍵字
+                                nearby_text = wrapper.find_parent().get_text().lower()
+                                if 'beta' in nearby_text:
+                                    print(f"✓ 透過備用方案獲取 {stock} 的 Beta 值: {value_float}")
+                                    return value_float
+                        except ValueError:
+                            continue
+
+                print(f"⚠️ 未找到 {stock} 的 Beta 值")
+                return None
+
+            except Exception as e:
+                print(f"第 {attempt + 1} 次嘗試失敗: {e}")
+                attempt += 1
+                if attempt < retries:
+                    await asyncio.sleep(random.uniform(5, 10))
+
+        print(f"❌ 無法獲取 {stock} 的 Beta 值")
+        return None
+
+    async def run_beta(self):
+        """批次執行 Beta 值抓取"""
+        await self.setup_browser()
+        semaphore = asyncio.Semaphore(self.max_concurrent)
+        try:
+            tasks = [self.fetch_beta_data(stock, semaphore) for stock in self.stocks]
+            result = await asyncio.gather(*tasks)
+            return result
+        finally:
+            await self.cleanup()
+
     async def fetch_barchart_data(self, stock, semaphore):
         """抓取單一股票的數據（Barchart Volatility）"""
         async with semaphore:
@@ -1333,14 +1457,15 @@ class StockScraper:
 
         # 計算 tokens.json 的完整路徑
         if getattr(sys, 'frozen', False):
+            # 打包後：直接在 exe 所在目錄找 tokens.json
             base_path = os.path.dirname(sys.executable)
-            tokens_folder = os.path.join(base_path, 'schwab')
+            tokens_file_path = os.path.join(base_path, 'tokens.json')  # 改這裡！
         else:
+            # 開發環境：在 schwab 資料夾中
             current_file = os.path.abspath(__file__)
             project_root = os.path.dirname(os.path.dirname(current_file))
             tokens_folder = os.path.join(project_root, 'schwab')
-
-        tokens_file_path = os.path.join(tokens_folder, 'tokens.json')
+            tokens_file_path = os.path.join(tokens_folder, 'tokens.json')
 
         print(f"🔐 使用 Schwab API 獲取 {stock} 的選擇權數據...")
         print(f"📁 Token 位置: {tokens_file_path}")

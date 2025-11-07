@@ -311,3 +311,33 @@ class StockManager:
                         print(f"❌ {stock} 的選擇權數據展平失敗")
                 else:
                     print(f"❌ {stock} 的選擇權Excel檔案不存在")
+
+
+    async def process_beta(self):
+        """處理Beta數據（選擇權模板專用）"""
+        # 🔥 檢查是否有選擇權模板
+        if not self.option_excel_files:
+            print("ℹ️ 未啟用選擇權模板，跳過 Beta 數據處理")
+            return
+
+        raw_beta = await self.scraper.run_beta()
+        print(f"獲取到的Beta數據: {raw_beta}")
+
+        for beta_dict in raw_beta:
+            for stock, beta_value in beta_dict.items():
+                if stock in self.option_excel_files and beta_value is not None:
+                    modified_base64, message = self.processor.write_beta_to_option_excel(
+                        stock=stock,
+                        beta_value=beta_value,
+                        excel_base64=self.option_excel_files[stock]
+                    )
+                    if modified_base64:
+                        self.option_excel_files[stock] = modified_base64
+                        print(f"✅ {message}")
+                    else:
+                        print(f"❌ {message}")
+                else:
+                    if stock not in self.option_excel_files:
+                        print(f"⚠️ {stock} 的選擇權Excel檔案不存在，跳過 Beta 寫入")
+                    if beta_value is None:
+                        print(f"❌ {stock} 的Beta值為None")

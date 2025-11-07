@@ -906,11 +906,11 @@ class StockAnalyzerGUI:
             # 計算總步驟數
             total_steps = 0
             if do_stock_analysis and do_option_analysis:
-                total_steps = 14
+                total_steps = 15
             elif do_stock_analysis:
                 total_steps = 10
             elif do_option_analysis:
-                total_steps = 5
+                total_steps = 6
 
             current_step = 0
 
@@ -1148,6 +1148,16 @@ class StockAnalyzerGUI:
                             return
                     else:
                         self.log("✅ 選擇權 Excel 檔案初始化完成")
+
+                        # 🔥 新增：Beta 數據處理
+                        check_if_stopped()
+                        current_step += 1
+                        step_num = f"{current_step}/{total_steps}"
+                        self.update_progress(current_step, total_steps, "[選擇權] 抓取 Beta 數據")
+                        self.log(f"\n📊 步驟 {step_num}：[選擇權] 正在抓取 Beta 數據...")
+
+                        await manager.process_beta()
+                        self.log("✅ Beta 數據處理完成")
 
                         # 抓取 Barchart 數據
                         check_if_stopped()
