@@ -47,7 +47,6 @@ import json
 import re
 import yfinance as yf
 
-
 # 自定義異常類別
 class TokenExpiredException(Exception):
     """Token 過期異常"""
@@ -55,7 +54,7 @@ class TokenExpiredException(Exception):
 
 
 class StockScraper:
-    def __init__(self, stocks, config=None, headless=True, max_concurrent=5):
+    def __init__(self, stocks, config=None, headless=False, max_concurrent=5):
         """
         初始化爬蟲類別。
         """
@@ -91,35 +90,29 @@ class StockScraper:
             self.schwab_available = True
 
     async def setup_browser(self):
-        """設定瀏覽器環境 - 修復版"""
-        try:
-            print("🔧 正在啟動 Playwright...")
+        """啟動瀏覽器（加入反偵測）"""
+        print("🔧 正在啟動 Playwright...")
+        from playwright.async_api import async_playwright
 
-            # 🔥 關鍵修復：確保在正確的事件循環中啟動
-            self.playwright = await async_playwright().start()
+        self.playwright = await async_playwright().start()
 
-            print("🔧 正在啟動 Chromium...")
-            self.browser = await self.playwright.chromium.launch(
-                headless=self.headless,
-                args=[
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-accelerated-2d-canvas",
-                    "--disable-gpu",
-                    "--disable-features=IsolateOrigins,site-per-process",
-                    "--disable-background-timer-throttling",
-                    "--disable-blink-features=AutomationControlled",
-                    "--exclude-switches=enable-automation",
-                ],
-            )
-            print("✅ 瀏覽器啟動成功")
-
-        except Exception as e:
-            print(f"❌ 瀏覽器啟動失敗: {e}")
-            import traceback
-            traceback.print_exc()
-            raise e
+        print("🔧 正在啟動 Chromium（反偵測模式）...")
+        self.browser = await self.playwright.chromium.launch(
+            headless=self.headless,
+            args=[
+                '--disable-blink-features=AutomationControlled',
+                '--disable-dev-shm-usage',
+                '--disable-web-security',
+                '--disable-features=IsolateOrigins,site-per-process',
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-infobars',
+                '--window-position=0,0',
+                '--ignore-certifcate-errors',
+                '--ignore-certifcate-errors-spki-list',
+            ]
+        )
+        print("✅ 瀏覽器啟動成功")
 
     async def cleanup(self):
         """清理資源 - 強化版，確保完全關閉所有連線，防止記憶體洩漏"""
@@ -718,19 +711,43 @@ class StockScraper:
                 # 前往頁面 - 改用 domcontentloaded
                 await page.goto(URL, wait_until='domcontentloaded', timeout=60000)
 
-                # # === 極簡版模擬人類行為 ===
-                # # 最短停頓
-                # await asyncio.sleep(random.uniform(0.1, 0.4))
-                #
-                # # 只移動一次滑鼠
-                # await page.mouse.move(
-                #     random.randint(300, 500),
-                #     random.randint(200, 300)
-                # )
-                #
-                # # 極短等待
-                # await asyncio.sleep(random.uniform(0.1, 0.3))
-                # # === 極簡版結束 ===
+                # === 🔥 新增：處理 Press & Hold CAPTCHA ===
+                try:
+                    captcha_button = await page.wait_for_selector(
+                        'button:has-text("Press & Hold"), div:has-text("Press & Hold")',
+                        timeout=3000
+                    )
+
+                    if captcha_button:
+                        print("⚠️ 偵測到 Press & Hold CAPTCHA，正在處理...")
+                        box = await captcha_button.bounding_box()
+
+                        if box:
+                            x = box['x'] + box['width'] / 2
+                            y = box['y'] + box['height'] / 2
+
+                            await page.mouse.move(x - 50, y - 50)
+                            await asyncio.sleep(random.uniform(0.3, 0.6))
+                            await page.mouse.move(x, y)
+                            await asyncio.sleep(random.uniform(0.2, 0.4))
+
+                            await page.mouse.down()
+                            hold_time = random.uniform(2.5, 4.0)
+                            print(f"   按住 {hold_time:.1f} 秒...")
+                            await asyncio.sleep(hold_time)
+                            await page.mouse.up()
+
+                            print("✓ 已完成 Press & Hold 驗證")
+                            await asyncio.sleep(random.uniform(2, 4))
+
+                except Exception as e:
+                    print(f"   未偵測到 CAPTCHA（正常）")
+
+                # 模擬人類瀏覽
+                await asyncio.sleep(random.uniform(1, 2))
+                await page.evaluate('window.scrollTo(0, 300)')
+                await asyncio.sleep(random.uniform(0.5, 1))
+                # === 新增結束 ===
 
                 # 使用更精確的選擇器組合
                 try:
@@ -865,25 +882,85 @@ class StockScraper:
     async def run_seekingalpha(self):
         await self.setup_browser()
 
-        # 創建一個持久的context
+        # 創建一個持久的context，加入反偵測
         context = await self.browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-            viewport={"width": 800, "height": 600},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            viewport={"width": 1920, "height": 1080},
             java_script_enabled=True,
+            locale='en-US',
+            timezone_id='America/New_York',
+            extra_http_headers={
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+                'Cache-Control': 'max-age=0',
+            }
         )
+
+        # 注入反偵測腳本
+        await context.add_init_script("""
+            // 移除 webdriver 標記
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+
+            // 添加 Chrome 對象
+            window.chrome = {
+                runtime: {},
+                loadTimes: function() {},
+                csi: function() {},
+                app: {}
+            };
+
+            // 覆蓋 permissions
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+            );
+
+            // 覆蓋 plugins 長度
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5]
+            });
+
+            // 覆蓋 languages
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en']
+            });
+
+            // 覆蓋 platform
+            Object.defineProperty(navigator, 'platform', {
+                get: () => 'Win32'
+            });
+        """)
 
         try:
             page = await context.new_page()
             result = []
 
             # 依序處理每個股票
-            for stock in self.stocks:
-                print(f"正在處理 {stock}...")
+            for i, stock in enumerate(self.stocks):
+                print(f"\n{'=' * 50}")
+                print(f"正在處理 {stock} ({i + 1}/{len(self.stocks)})...")
+                print(f"{'=' * 50}")
+
                 stock_data = await self.get_seekingalpha_html(stock, page)
                 result.append({stock: stock_data})
 
-                # 每個股票之間的延遲
-                await asyncio.sleep(random.uniform(10, 20))
+                # 每個股票之間的延遲（第一個股票後才延遲）
+                if i < len(self.stocks) - 1:
+                    wait_time = random.uniform(12, 20)
+                    print(f"\n⏳ 等待 {wait_time:.1f} 秒後處理下一個股票...")
+                    await asyncio.sleep(wait_time)
 
         finally:
             await context.close()
@@ -893,38 +970,79 @@ class StockScraper:
 
     async def fetch_wacc_data(self, stock, semaphore):
         async with semaphore:
-            context = None  # 🔥 初始化
+            context = None
             try:
                 context = await self.browser.new_context(
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
                     viewport={"width": 1920, "height": 1080},
                     java_script_enabled=True,
+                    locale='en-US',
+                    timezone_id='America/New_York',
+                    extra_http_headers={
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                        'Accept-Language': 'en-US,en;q=0.9',
+                        'Accept-Encoding': 'gzip, deflate, br',
+                        'DNT': '1',
+                        'Connection': 'keep-alive',
+                        'Upgrade-Insecure-Requests': '1',
+                        'Sec-Fetch-Dest': 'document',
+                        'Sec-Fetch-Mode': 'navigate',
+                        'Sec-Fetch-Site': 'none',
+                        'Cache-Control': 'max-age=0',
+                    }
                 )
-                # 🔥 追蹤 context
+
+                # 注入反偵測腳本
+                await context.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined
+                    });
+
+                    window.chrome = {
+                        runtime: {},
+                        loadTimes: function() {},
+                        csi: function() {},
+                        app: {}
+                    };
+
+                    const originalQuery = window.navigator.permissions.query;
+                    window.navigator.permissions.query = (parameters) => (
+                        parameters.name === 'notifications' ?
+                            Promise.resolve({ state: Notification.permission }) :
+                            originalQuery(parameters)
+                    );
+
+                    Object.defineProperty(navigator, 'plugins', {
+                        get: () => [1, 2, 3, 4, 5]
+                    });
+
+                    Object.defineProperty(navigator, 'languages', {
+                        get: () => ['en-US', 'en']
+                    });
+                """)
+
                 async with self.contexts_lock:
                     self.contexts.append(context)
                 try:
-                    page_summary = await context.new_page()
-                    wacc_value = await self.get_wacc_html(stock, page_summary)
+                    page = await context.new_page()
+                    wacc_value = await self.get_wacc_html(stock, page)
                     return {stock: wacc_value}
                 finally:
                     await context.close()
-                    # 🔥 移除追蹤
                     async with self.contexts_lock:
                         if context in self.contexts:
                             self.contexts.remove(context)
             except Exception as e:
-                # 確保 context 被關閉
+                print(f"❌ {stock} 發生錯誤: {e}")
                 if context:
                     try:
                         await context.close()
                     except:
                         pass
-                    # 🔥 移除追蹤
                     async with self.contexts_lock:
                         if context in self.contexts:
                             self.contexts.remove(context)
-                return {stock: None}  # 如果出錯返回None
+                return {stock: None}
 
     async def get_wacc_html(self, stock, page, retries=3):
         """抓取特定股票的WACC資料並回傳int數值。"""
@@ -933,31 +1051,31 @@ class StockScraper:
 
         URL = f'https://www.gurufocus.com/term/wacc/{stock}'
         attempt = 0
-        # print(URL)
+
         while attempt < retries:
             try:
                 print(f"正在嘗試抓取 {stock} 的WACC資料 (第 {attempt + 1} 次)...")
 
                 # 隨機等待時間
-                await asyncio.sleep(random.uniform(2, 5))
+                await asyncio.sleep(random.uniform(3, 6))
 
                 # 前往頁面
-                await page.goto(URL, wait_until='networkidle', timeout=60000)
+                await page.goto(URL, wait_until='domcontentloaded', timeout=60000)
 
-                # 等待頁面載入完成
-                await page.wait_for_load_state('networkidle')
+                # 模擬人類瀏覽行為
+                await asyncio.sleep(random.uniform(1, 2))
+                await page.evaluate('window.scrollTo(0, 200)')
+                await asyncio.sleep(random.uniform(0.5, 1))
 
                 # 等待關鍵內容載入
                 try:
                     await page.wait_for_selector('h1', timeout=30000)
-                    await asyncio.sleep(3)
+                    await asyncio.sleep(2)
                 except Exception as e:
                     print(f"等待頁面載入時發生錯誤: {e}")
 
                 # 獲取頁面內容
                 content = await page.content()
-
-                # 使用BeautifulSoup解析WACC數值
                 soup = BeautifulSoup(content, 'html.parser')
 
                 # 尋找包含WACC數值的特定元素
@@ -971,23 +1089,25 @@ class StockScraper:
                         # 提取百分比數值
                         match = re.search(r':(\d+\.?\d*)%', text)
                         if match:
-                            wacc_value = float(match.group(1))/100
-                            # print(f"找到WACC值: {wacc_value}%")
+                            wacc_value = float(match.group(1)) / 100
+                            print(f"✓ 找到 {stock} 的WACC值: {wacc_value}")
                             break
 
                 if wacc_value is not None:
                     return wacc_value
                 else:
-                    print(f"未能找到 {stock} 的WACC數值")
+                    print(f"⚠️ 未能找到 {stock} 的WACC數值")
                     return None
 
             except Exception as e:
                 print(f"第 {attempt + 1} 次嘗試失敗: {e}")
                 attempt += 1
                 if attempt < retries:
-                    await asyncio.sleep(random.uniform(5, 10))
+                    wait_time = random.uniform(8, 15)
+                    print(f"等待 {wait_time:.1f} 秒後重試...")
+                    await asyncio.sleep(wait_time)
 
-        print(f"Failed to retrieve WACC data for {stock} after {retries} attempts")
+        print(f"❌ Failed to retrieve WACC data for {stock} after {retries} attempts")
         return None
 
     async def run_wacc(self):
@@ -1003,23 +1123,68 @@ class StockScraper:
 
     async def fetch_TradingView_data(self, stock, semaphore):
         async with semaphore:
-            context = None  # 🔥 初始化
+            context = None
             try:
                 context = await self.browser.new_context(
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
                     viewport={"width": 1920, "height": 1080},
                     java_script_enabled=True,
+                    locale='zh-TW',
+                    timezone_id='Asia/Taipei',
+                    # 添加更多真實瀏覽器特徵
+                    extra_http_headers={
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                        'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+                        'Accept-Encoding': 'gzip, deflate, br',
+                        'DNT': '1',
+                        'Connection': 'keep-alive',
+                        'Upgrade-Insecure-Requests': '1',
+                        'Sec-Fetch-Dest': 'document',
+                        'Sec-Fetch-Mode': 'navigate',
+                        'Sec-Fetch-Site': 'none',
+                        'Cache-Control': 'max-age=0',
+                    }
                 )
-                # 🔥 追蹤 context
+
+                # 注入反偵測腳本
+                await context.add_init_script("""
+                    // 覆蓋 webdriver 檢測
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined
+                    });
+
+                    // 覆蓋 Chrome 特徵
+                    window.chrome = {
+                        runtime: {}
+                    };
+
+                    // 覆蓋 permissions
+                    const originalQuery = window.navigator.permissions.query;
+                    window.navigator.permissions.query = (parameters) => (
+                        parameters.name === 'notifications' ?
+                            Promise.resolve({ state: Notification.permission }) :
+                            originalQuery(parameters)
+                    );
+
+                    // 覆蓋 plugins
+                    Object.defineProperty(navigator, 'plugins', {
+                        get: () => [1, 2, 3, 4, 5]
+                    });
+
+                    // 覆蓋 languages
+                    Object.defineProperty(navigator, 'languages', {
+                        get: () => ['zh-TW', 'zh', 'en-US', 'en']
+                    });
+                """)
+
                 async with self.contexts_lock:
                     self.contexts.append(context)
                 try:
-                    page_summary = await context.new_page()
-                    wacc_value = await self.get_TradingView_html(stock, page_summary)
-                    return {stock: wacc_value}
+                    page = await context.new_page()
+                    beta_value = await self.get_TradingView_html(stock, page)
+                    return {stock: beta_value}
                 finally:
                     await context.close()
-                    # 🔥 移除追蹤
                     async with self.contexts_lock:
                         if context in self.contexts:
                             self.contexts.remove(context)
@@ -1206,129 +1371,255 @@ class StockScraper:
             await self.cleanup()
         return result
 
-    async def fetch_beta_data(self, stock, semaphore):
-        """抓取單一股票的Beta值（TradingView）"""
-        async with semaphore:
-            context = None
-            try:
-                context = await self.browser.new_context(
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-                    viewport={"width": 1920, "height": 1080},
-                    java_script_enabled=True,
-                )
-                async with self.contexts_lock:
-                    self.contexts.append(context)
+    async def run_beta(self):
+        """批次執行 Beta 值抓取 - 先集中處理 CAPTCHA，再批次爬蟲"""
+
+        # 🔥 臨時保存原始 headless 設定
+        original_headless = self.headless
+
+        # 🔥 強制使用有頭模式（顯示瀏覽器）
+        self.headless = False
+
+        try:
+            await self.setup_browser()
+
+            print("\n" + "=" * 60)
+            print("🚀 階段 1: 集中處理 CAPTCHA 驗證")
+            print("⚠️  即將打開所有股票的頁面")
+            print("⚠️  請依序完成所有 CAPTCHA 驗證")
+            print("⚠️  完成所有驗證後，程式將自動開始抓取數據")
+            print("=" * 60 + "\n")
+
+            # 🔥 階段 1: 打開所有頁面並處理 CAPTCHA
+            pages_and_contexts = await self._open_all_beta_pages()
+
+            if not pages_and_contexts:
+                print("❌ 無法打開任何頁面")
+                return []
+
+            print("\n" + "=" * 60)
+            print("✅ 所有 CAPTCHA 已通過！")
+            print("🚀 階段 2: 開始批次抓取 Beta 值")
+            print("=" * 60 + "\n")
+
+            # 🔥 階段 2: 批次抓取數據
+            result = []
+            for i, (stock, page, context) in enumerate(pages_and_contexts):
+                print(f"\n{'=' * 50}")
+                print(f"抓取 {stock} 的 Beta 值 ({i + 1}/{len(pages_and_contexts)})")
+                print(f"{'=' * 50}")
+
                 try:
-                    page = await context.new_page()
-                    beta_value = await self.get_beta_html(stock, page)
-                    return {stock: beta_value}
-                finally:
+                    beta_value = await self._extract_beta_from_page(stock, page)
+                    result.append({stock: beta_value})
+                    print(f"✓ {stock}: {beta_value}")
+                except Exception as e:
+                    print(f"❌ {stock} 抓取失敗: {e}")
+                    result.append({stock: None})
+
+                # 延遲（最後一個不延遲）
+                if i < len(pages_and_contexts) - 1:
+                    await asyncio.sleep(random.uniform(0.5, 1.5))
+
+            # 🔥 關閉所有頁面和 context
+            print("\n🧹 清理資源...")
+            for stock, page, context in pages_and_contexts:
+                try:
                     await context.close()
-                    async with self.contexts_lock:
-                        if context in self.contexts:
-                            self.contexts.remove(context)
+                except:
+                    pass
+
+            return result
+
+        finally:
+            # 🔥 恢復原始設定
+            self.headless = original_headless
+            await self.cleanup()
+
+    async def _open_all_beta_pages(self):
+        """打開所有股票的 Beta 頁面並等待 CAPTCHA 通過（無時間限制）"""
+        pages_and_contexts = []
+
+        for i, stock in enumerate(self.stocks):
+            print(f"\n{'=' * 50}")
+            print(f"打開 {stock} 的頁面 ({i + 1}/{len(self.stocks)})")
+            print(f"{'=' * 50}")
+
+            try:
+                # 創建新的 context
+                context = await self.browser.new_context(
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                    viewport={"width": 1280, "height": 960},
+                    java_script_enabled=True,
+                    locale='zh-TW',
+                    timezone_id='Asia/Taipei',
+                    extra_http_headers={
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                        'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+                        'Accept-Encoding': 'gzip, deflate, br',
+                        'DNT': '1',
+                        'Connection': 'keep-alive',
+                        'Upgrade-Insecure-Requests': '1',
+                    }
+                )
+
+                # 注入反偵測腳本
+                await context.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined
+                    });
+                    window.chrome = {
+                        runtime: {},
+                        loadTimes: function() {},
+                        csi: function() {},
+                        app: {}
+                    };
+                    Object.defineProperty(navigator, 'plugins', {
+                        get: () => [1, 2, 3, 4, 5]
+                    });
+                    Object.defineProperty(navigator, 'languages', {
+                        get: () => ['zh-TW', 'zh', 'en-US', 'en']
+                    });
+                """)
+
+                page = await context.new_page()
+
+                # 構建 URL
+                url_stock_exchange = yf.Ticker(stock).info.get('fullExchangeName', None)
+                if url_stock_exchange in ['NasdaqGS', 'NasdaqGM', 'NasdaqCM']:
+                    url_stock_exchange = 'NASDAQ'
+
+                stock_symbol = ''.join(['.' if char == '-' else char for char in stock]) if '-' in stock else stock
+                URL = f'https://tw.tradingview.com/symbols/{url_stock_exchange}-{stock_symbol}/'
+
+                # 訪問頁面
+                await asyncio.sleep(random.uniform(2, 4))
+                await page.goto(URL, wait_until='domcontentloaded', timeout=60000)
+                await asyncio.sleep(random.uniform(2, 3))
+
+                # 🔥 檢查 CAPTCHA（無限等待）
+                await self._wait_for_captcha_resolution(stock, page)
+
+                # 保存頁面和 context
+                pages_and_contexts.append((stock, page, context))
+                print(f"✓ {stock} 頁面已就緒")
+
+                # 每個頁面之間延遲
+                if i < len(self.stocks) - 1:
+                    await asyncio.sleep(random.uniform(1, 2))
+
             except Exception as e:
+                print(f"❌ {stock} 頁面打開失敗: {e}")
                 if context:
                     try:
                         await context.close()
                     except:
                         pass
-                    async with self.contexts_lock:
-                        if context in self.contexts:
-                            self.contexts.remove(context)
-                return {stock: None}
 
-    async def get_beta_html(self, stock, page, retries=3):
-        """抓取特定股票的Beta值"""
-        # 處理交易所名稱
-        url_stock_exchange = yf.Ticker(stock).info.get('fullExchangeName', None)
-        if url_stock_exchange in ['NasdaqGS', 'NasdaqGM', 'NasdaqCM']:
-            url_stock_exchange = 'NASDAQ'
+        return pages_and_contexts
 
-        # 處理股票代碼中的特殊字符
-        if '-' in stock:
-            stock_symbol = ''.join(['.' if char == '-' else char for char in stock])
-        else:
-            stock_symbol = stock
+    async def _wait_for_captcha_resolution(self, stock, page):
+        """等待 CAPTCHA 被解決（無時間限制）"""
+        captcha_visible = await self._check_captcha_visible(page)
 
-        URL = f'https://tw.tradingview.com/symbols/{url_stock_exchange}-{stock_symbol}/'
-        attempt = 0
+        if captcha_visible:
+            print("\n" + "🔴" * 30)
+            print(f"⚠️  {stock} 偵測到 CAPTCHA 驗證！")
+            print("⚠️  請在瀏覽器中手動完成驗證")
+            print("⚠️  完成後將自動繼續...")
+            print("🔴" * 30 + "\n")
 
-        while attempt < retries:
-            try:
-                print(f"正在抓取 {stock} 的 Beta 值 (第 {attempt + 1} 次)...")
+            # 🔥 無限等待直到 CAPTCHA 消失
+            check_count = 0
+            while True:
+                await asyncio.sleep(5)
+                check_count += 1
 
-                await asyncio.sleep(random.uniform(2, 5))
-                await page.goto(URL, wait_until='domcontentloaded', timeout=60000)
+                still_visible = await self._check_captcha_visible(page)
 
-                # 等待頁面載入
-                await asyncio.sleep(3)
+                if not still_visible:
+                    print(f"✅ {stock} CAPTCHA 已通過！")
+                    break
 
-                content = await page.content()
-                soup = BeautifulSoup(content, 'html.parser')
+                # 每 20 秒提示一次
+                if check_count % 4 == 0:
+                    print(f"   {stock} 等待中... (已等待 {check_count * 5} 秒)")
 
-                # 方法1: 尋找包含 "Beta" 文字的區塊，然後找相鄰的數值
-                beta_section = None
-                all_wrappers = soup.find_all('div', class_='wrapper-QCJM7wcY')
+            # CAPTCHA 通過後額外等待
+            await asyncio.sleep(random.uniform(2, 4))
 
-                for wrapper in all_wrappers:
-                    # 檢查是否包含 "Beta" 文字（可能在附近的元素）
-                    parent = wrapper.find_parent()
-                    if parent and 'beta' in parent.get_text().lower():
-                        beta_section = wrapper
-                        break
-
-                if beta_section:
-                    value_div = beta_section.find('div', class_='value-QCJM7wcY')
-                    if value_div:
-                        beta_text = value_div.get_text(strip=True)
-                        try:
-                            beta_value = float(beta_text)
-                            print(f"✓ 成功獲取 {stock} 的 Beta 值: {beta_value}")
-                            return beta_value
-                        except ValueError:
-                            print(f"⚠️ 無法轉換 Beta 值為數字: {beta_text}")
-
-                # 方法2: 備用方案 - 使用更寬鬆的搜尋
-                # 尋找所有可能的數值，並根據上下文判斷
-                for wrapper in all_wrappers:
-                    value_div = wrapper.find('div', class_='value-QCJM7wcY')
-                    if value_div:
-                        value_text = value_div.get_text(strip=True)
-                        # Beta 通常在 0.5 到 3.0 之間
-                        try:
-                            value_float = float(value_text)
-                            if 0.1 <= value_float <= 5.0:
-                                # 檢查附近是否有 Beta 關鍵字
-                                nearby_text = wrapper.find_parent().get_text().lower()
-                                if 'beta' in nearby_text:
-                                    print(f"✓ 透過備用方案獲取 {stock} 的 Beta 值: {value_float}")
-                                    return value_float
-                        except ValueError:
-                            continue
-
-                print(f"⚠️ 未找到 {stock} 的 Beta 值")
-                return None
-
-            except Exception as e:
-                print(f"第 {attempt + 1} 次嘗試失敗: {e}")
-                attempt += 1
-                if attempt < retries:
-                    await asyncio.sleep(random.uniform(5, 10))
-
-        print(f"❌ 無法獲取 {stock} 的 Beta 值")
-        return None
-
-    async def run_beta(self):
-        """批次執行 Beta 值抓取"""
-        await self.setup_browser()
-        semaphore = asyncio.Semaphore(self.max_concurrent)
+    async def _check_captcha_visible(self, page):
+        """檢查 CAPTCHA 是否可見"""
         try:
-            tasks = [self.fetch_beta_data(stock, semaphore) for stock in self.stocks]
-            result = await asyncio.gather(*tasks)
-            return result
-        finally:
-            await self.cleanup()
+            # 檢查 iframe
+            captcha_frame = await page.query_selector('iframe[src*="captcha"], iframe[title*="reCAPTCHA"]')
+            if captcha_frame:
+                is_visible = await captcha_frame.is_visible()
+                if is_visible:
+                    return True
+
+            # 檢查其他元素
+            captcha_element = await page.query_selector('[class*="captcha"], [id*="captcha"], .g-recaptcha')
+            if captcha_element:
+                is_visible = await captcha_element.is_visible()
+                if is_visible:
+                    return True
+
+            return False
+        except:
+            return False
+
+    async def _extract_beta_from_page(self, stock, page):
+        """從已載入的頁面中提取 Beta 值"""
+        try:
+            # 模擬人類瀏覽行為
+            scroll_positions = [300, 600, 400, 100, 0]
+            for pos in scroll_positions:
+                await page.evaluate(f'window.scrollTo(0, {pos})')
+                await asyncio.sleep(random.uniform(0.3, 0.6))
+
+            # 獲取內容
+            content = await page.content()
+            soup = BeautifulSoup(content, 'html.parser')
+
+            # 解析 Beta 值（使用原有邏輯）
+            beta_section = None
+            all_wrappers = soup.find_all('div', class_='wrapper-QCJM7wcY')
+
+            for wrapper in all_wrappers:
+                parent = wrapper.find_parent()
+                if parent and 'beta' in parent.get_text().lower():
+                    beta_section = wrapper
+                    break
+
+            if beta_section:
+                value_div = beta_section.find('div', class_='value-QCJM7wcY')
+                if value_div:
+                    beta_text = value_div.get_text(strip=True)
+                    try:
+                        return float(beta_text)
+                    except ValueError:
+                        pass
+
+            # 備用方案
+            for wrapper in all_wrappers:
+                value_div = wrapper.find('div', class_='value-QCJM7wcY')
+                if value_div:
+                    value_text = value_div.get_text(strip=True)
+                    try:
+                        value_float = float(value_text)
+                        if 0.1 <= value_float <= 5.0:
+                            nearby_text = wrapper.find_parent().get_text().lower()
+                            if 'beta' in nearby_text:
+                                return value_float
+                    except ValueError:
+                        continue
+
+            return None
+
+        except Exception as e:
+            print(f"提取 Beta 值失敗: {e}")
+            return None
 
     async def fetch_barchart_data(self, stock, semaphore):
         """抓取單一股票的數據（Barchart Volatility）"""

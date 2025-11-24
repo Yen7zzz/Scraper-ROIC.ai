@@ -764,7 +764,7 @@ class StockProcess:
                 ws = wb.sheets[1]  # 第二個工作表
 
                 # 清除舊資料
-                ws.range('C8').value = None
+                ws.range('B10').value = None
                 wb.save()
 
                 # 檢查是否有原始數據
@@ -780,7 +780,7 @@ class StockProcess:
                     return cleaned_base64, f'Beta: {stock} 無原始資料，已清空舊數據'
 
                 # 寫入Beta值
-                ws.range('C8').value = beta_value
+                ws.range('B10').value = beta_value
                 wb.save()
                 wb.close()
                 app.quit()
@@ -952,10 +952,10 @@ class StockProcess:
                 ws = wb.sheets[1]  # 第二個工作表
 
                 # 清除舊資料
-                ws.range('C3').value = None
-                ws.range('C4').value = None
-                ws.range('C5').value = None
-                ws.range('C6').value = None
+                ws.range('B5').value = None
+                ws.range('B6').value = None
+                ws.range('B7').value = None
+                ws.range('B8').value = None
                 wb.save()
 
                 # 檢查是否有原始數據
@@ -991,10 +991,10 @@ class StockProcess:
                     return cleaned_base64, f'❌ {stock} 無法提取Barchart數據，網頁HTML結構可能已改變'
 
                 # 寫入數值
-                ws.range('C3').value = iv_value
-                ws.range('C4').value = hv_value
-                ws.range('C5').value = iv_pctl_value
-                ws.range('C6').value = iv_rank_value
+                ws.range('B5').value = iv_value
+                ws.range('B6').value = hv_value
+                ws.range('B7').value = iv_pctl_value
+                ws.range('B8').value = iv_rank_value
 
                 wb.save()
                 wb.close()

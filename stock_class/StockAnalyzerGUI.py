@@ -1,4 +1,3 @@
-
 import warnings
 import sys
 import tkinter as tk
@@ -1040,7 +1039,7 @@ class StockAnalyzerGUI:
                 self.update_progress(current_step, total_steps, "[股票] 抓取 Summary 和關鍵指標")
                 self.log(f"\n📊 步驟 {step_num}：[股票] 正在抓取 Summary 和關鍵指標數據...")
 
-                await manager.process_combined_summary_and_metrics()
+                # await manager.process_combined_summary_and_metrics()
                 self.log("✅ Summary 和關鍵指標數據處理完成")
 
                 # Financial 數據
@@ -1050,7 +1049,7 @@ class StockAnalyzerGUI:
                 self.update_progress(current_step, total_steps, "[股票] 處理 Financial 數據")
                 self.log(f"\n💰 步驟 {step_num}：[股票] 正在處理 Financial 數據...")
 
-                await manager.process_financial()
+                # await manager.process_financial()
                 self.log("✅ Financial 數據處理完成")
 
                 # Ratios 數據
@@ -1060,7 +1059,7 @@ class StockAnalyzerGUI:
                 self.update_progress(current_step, total_steps, "[股票] 處理 Ratios 數據")
                 self.log(f"\n📈 步驟 {step_num}：[股票] 正在處理 Ratios 數據...")
 
-                await manager.process_ratios()
+                # await manager.process_ratios()
                 self.log("✅ Ratios 數據處理完成")
 
                 # 其他數據
@@ -1070,7 +1069,7 @@ class StockAnalyzerGUI:
                 self.update_progress(current_step, total_steps, "[股票] 抓取其他數據")
                 self.log(f"\n📋 步驟 {step_num}：[股票] 正在抓取其他股票數據...")
 
-                await manager.process_others_data()
+                # await manager.process_others_data()
                 self.log("✅ 其他股票數據處理完成")
 
                 # Revenue Growth 和 WACC
