@@ -1,0 +1,50 @@
+# excel_template/option_chain_excel_template.py
+import os
+import sys
+
+def get_template():
+    """讀取選擇權 Excel 模板的 Base64 字串"""
+    try:
+        # 處理打包後的路徑
+        if getattr(sys, 'frozen', False):
+            # 打包後：在 exe 所在目錄
+            base_path = os.path.dirname(sys.executable)
+        else:
+            # 開發環境：在當前檔案的目錄
+            base_path = os.path.dirname(os.path.abspath(__file__))
+        
+        # 🔥 修復：使用相對路徑或正確的絕對路徑
+        template_file = os.path.join(base_path, 'Option_New_Modle.txt')
+
+        # 如果當前目錄找不到，嘗試上層目錄
+        if not os.path.exists(template_file):
+            template_file = os.path.join(os.path.dirname(base_path), 'excel_template', 'Option_New_Modle.txt')
+
+        # 如果還是找不到，使用你提供的絕對路徑作為後備
+        if not os.path.exists(template_file):
+            template_file = r'C:\Users\2993\Downloads\option_template\Option_New Modle.txt'
+
+        if not os.path.exists(template_file):
+            print(f"⚠️ 警告：找不到選擇權模板檔案")
+            print(f"   嘗試的路徑: {template_file}")
+            return ""
+
+        print(f"✓ 正在載入選擇權模板: {template_file}")
+        with open(template_file, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+            print(f"✓ 選擇權模板載入成功 ({len(content)} 字元)")
+            return content
+
+    except Exception as e:
+        print(f"❌ 讀取選擇權模板失敗: {e}")
+        return ""
+
+# 🔥 修復：立即初始化，而不是設為 None
+Option_Chain_Excel_Template_Base64 = get_template()
+
+# 如果需要延遲加載，可以使用這個函數
+def reload_template():
+    """重新載入模板（用於調試）"""
+    global Option_Chain_Excel_Template_Base64
+    Option_Chain_Excel_Template_Base64 = get_template()
+    return Option_Chain_Excel_Template_Base64

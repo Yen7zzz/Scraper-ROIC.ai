@@ -25,7 +25,7 @@ if sys.platform == 'win32':
 
 # 在事件循環設定完成後才導入其他模組
 from excel_template.fundamental_excel_template import Fundamental_Excel_Template_Base64
-from excel_template.option_chain_excel_template import Option_Chain_Excel_Template_Base64
+# from excel_template.option_chain_excel_template import Option_Chain_Excel_Template_Base64
 from stock_class.StockScraper import StockScraper
 from stock_class.StockProcess import StockProcess
 from stock_class.StockManager import StockManager
@@ -638,7 +638,7 @@ class StockAnalyzerGUI:
         self.root.update_idletasks()
 
     def start_analysis(self):
-        """開始分析 - 加入模板選擇驗證"""
+        """開始分析 - 加入模板選擇驗證（強化版）"""
         # 檢查是否至少選擇一個模板
         do_stock_analysis = self.stock_analysis_var.get()
         do_option_analysis = self.option_analysis_var.get()
@@ -647,17 +647,39 @@ class StockAnalyzerGUI:
             messagebox.showwarning("⚠️ 警告", "請至少選擇一個分析模板！")
             return
 
-        # 檢查對應的Excel模板
+        # 🔥 修復：增加 None 檢查和更詳細的錯誤訊息
         if do_stock_analysis:
-            if Fundamental_Excel_Template_Base64.strip() == "" or "請將您從轉換工具得到的" in Fundamental_Excel_Template_Base64:
-                messagebox.showerror("❌ 錯誤",
-                                     "請先設定 Fundamental_Excel_Template_Base64 變數！\n請將股票分析Excel模板轉換為base64後貼入程式碼中。")
+            # 檢查股票分析模板
+            if Fundamental_Excel_Template_Base64 is None or \
+                    not isinstance(Fundamental_Excel_Template_Base64, str) or \
+                    Fundamental_Excel_Template_Base64.strip() == "" or \
+                    "請將您從轉換工具得到的" in Fundamental_Excel_Template_Base64:
+                messagebox.showerror(
+                    "❌ 錯誤",
+                    "股票分析模板未正確載入！\n\n"
+                    "請檢查以下事項：\n"
+                    "1. Fundamental_Excel_Template_Base64 變數是否已設定\n"
+                    "2. 模板檔案是否存在於正確路徑\n"
+                    "3. 檔案內容是否為有效的 base64 字串"
+                )
                 return
 
         if do_option_analysis:
-            if Option_Chain_Excel_Template_Base64.strip() == "" or "請將您從轉換工具得到的" in Option_Chain_Excel_Template_Base64:
-                messagebox.showerror("❌ 錯誤",
-                                     "請先設定 Option_Chain_Excel_Template_Base64 變數！\n請將選擇權Excel模板轉換為base64後貼入程式碼中。")
+            # 🔥 修改：檢查實體檔案是否存在
+            if getattr(sys, 'frozen', False):
+                base_path = os.path.dirname(sys.executable)
+            else:
+                current_file = os.path.abspath(__file__)
+                base_path = os.path.dirname(os.path.dirname(current_file))
+
+            template_path = os.path.join(base_path, 'excel_template', 'Option_Chain_Template.xlsm')
+
+            if not os.path.exists(template_path):
+                messagebox.showerror(
+                    "❌ 錯誤",
+                    f"選擇權分析模板未找到！\n\n"
+                    f"請確認檔案存在：\n{template_path}"
+                )
                 return
 
         # 獲取輸入的股票代碼
@@ -1010,7 +1032,7 @@ class StockAnalyzerGUI:
                 scraper = StockScraper(stocks=stocks_dict, config=self.config, max_concurrent=3)
                 processor = StockProcess(max_concurrent=2)
                 manager = StockManager(scraper=scraper, processor=processor,
-                                       stocks=stocks_dict, validator=validator, max_concurrent=3)
+                                       stocks=stocks_dict, validator=validator, max_concurrent=15)
 
                 # 🔥 保存到實例變數（供 stop_analysis 使用）
                 self.current_scraper = scraper
@@ -1120,7 +1142,7 @@ class StockAnalyzerGUI:
                     scraper = StockScraper(stocks=stocks_dict, config=self.config, max_concurrent=3)
                     processor = StockProcess(max_concurrent=2)
                     manager = StockManager(scraper=scraper, processor=processor,
-                                           stocks=stocks_dict, validator=validator, max_concurrent=3)
+                                           stocks=stocks_dict, validator=validator, max_concurrent=15)
 
                     # 🔥 保存引用
                     self.current_scraper = scraper
@@ -1148,35 +1170,31 @@ class StockAnalyzerGUI:
                     else:
                         self.log("✅ 選擇權 Excel 檔案初始化完成")
 
-                        # 🔥 新增：Beta 數據處理
+                        # 🔥 ADD 開始 - 新增這段 ✅
+
+                        # 🔥 步驟 1: 批次抓取所有數據
                         check_if_stopped()
                         current_step += 1
                         step_num = f"{current_step}/{total_steps}"
-                        self.update_progress(current_step, total_steps, "[選擇權] 抓取 Beta 數據")
-                        self.log(f"\n📊 步驟 {step_num}：[選擇權] 正在抓取 Beta 數據...")
+                        self.update_progress(current_step, total_steps, "[選擇權] 批次抓取所有數據")
+                        self.log(f"\n📊 步驟 {step_num}：[選擇權] 正在批次抓取 Beta、Barchart 和 Option Chain...")
 
+                        # 依序抓取但不寫入
                         await manager.process_beta()
-                        self.log("✅ Beta 數據處理完成")
-
-                        # 抓取 Barchart 數據
-                        check_if_stopped()
-                        current_step += 1
-                        step_num = f"{current_step}/{total_steps}"
-                        self.update_progress(current_step, total_steps, "[選擇權] 抓取 Barchart 波動率")
-                        self.log(f"\n📊 步驟 {step_num}：[選擇權] 正在抓取 Barchart 波動率數據...")
-
                         await manager.process_barchart_for_options()
-                        self.log("✅ Barchart 波動率數據處理完成")
+                        await manager.process_option_chains()
 
-                        # 抓取 Option Chain 數據
+                        self.log("✅ 所有選擇權數據抓取完成")
+
+                        # 🔥 步驟 2: 批次寫入 (實際上已在上面的方法中完成)
                         check_if_stopped()
                         current_step += 1
                         step_num = f"{current_step}/{total_steps}"
-                        self.update_progress(current_step, total_steps, "[選擇權] 抓取 Option Chain 數據")
-                        self.log(f"\n🔗 步驟 {step_num}：[選擇權] 正在抓取 Option Chain 數據...")
+                        self.update_progress(current_step, total_steps, "[選擇權] 批次寫入 Excel")
+                        self.log(f"\n💾 步驟 {step_num}：[選擇權] 已完成批次寫入到 Excel")
+                        self.log("✅ 選擇權數據批次處理完成")
 
-                        await manager.process_option_chains()
-                        self.log("✅ Option Chain 數據處理完成")
+                        # 🔥 ADD 結束 ✅
 
                         # 保存選擇權檔案
                         check_if_stopped()

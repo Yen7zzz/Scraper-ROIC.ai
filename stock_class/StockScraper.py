@@ -54,7 +54,7 @@ class TokenExpiredException(Exception):
 
 
 class StockScraper:
-    def __init__(self, stocks, config=None, headless=False, max_concurrent=5):
+    def __init__(self, stocks, config=None, headless=True, max_concurrent=15):
         """
         初始化爬蟲類別。
         """
