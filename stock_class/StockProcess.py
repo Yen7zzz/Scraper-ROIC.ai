@@ -896,42 +896,42 @@ class StockProcess:
             print(f"保存檔案時發生錯誤: {e}")
             return False
 
-    def create_option_excel_from_base64(self, stock):
-        """從base64模板創建選擇權Excel文件的base64 - 使用xlwings"""
-        try:
-            if Option_Chain_Excel_Template_Base64.strip() == "" or "請將您從轉換工具得到的" in Option_Chain_Excel_Template_Base64:
-                return "", "❌ 錯誤：請先設定 Option_Chain_Excel_Template_Base64 變數"
-
-            # 解碼 base64 並創建臨時檔案
-            excel_binary = base64.b64decode(Option_Chain_Excel_Template_Base64.strip())
-
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsm') as tmp_file:
-                tmp_file.write(excel_binary)
-                tmp_path = tmp_file.name
-
-            try:
-                # 用 xlwings 打開並立即關閉（確保格式正確）
-                app = xw.App(visible=False)
-                wb = app.books.open(tmp_path)
-                wb.save()
-                wb.close()
-                app.quit()
-
-                # 讀取回 base64
-                with open(tmp_path, 'rb') as f:
-                    modified_binary = f.read()
-
-                excel_base64 = base64.b64encode(modified_binary).decode('utf-8')
-
-                return excel_base64, f"成功為 {stock} 創建選擇權Excel檔案"
-
-            finally:
-                # 清理臨時檔案
-                if os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
-
-        except Exception as e:
-            return "", f"創建選擇權Excel檔案時發生錯誤: {e}"
+    # def create_option_excel_from_base64(self, stock):
+    #     """從base64模板創建選擇權Excel文件的base64 - 使用xlwings"""
+    #     try:
+    #         if Option_Chain_Excel_Template_Base64.strip() == "" or "請將您從轉換工具得到的" in Option_Chain_Excel_Template_Base64:
+    #             return "", "❌ 錯誤：請先設定 Option_Chain_Excel_Template_Base64 變數"
+    #
+    #         # 解碼 base64 並創建臨時檔案
+    #         excel_binary = base64.b64decode(Option_Chain_Excel_Template_Base64.strip())
+    #
+    #         with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsm') as tmp_file:
+    #             tmp_file.write(excel_binary)
+    #             tmp_path = tmp_file.name
+    #
+    #         try:
+    #             # 用 xlwings 打開並立即關閉（確保格式正確）
+    #             app = xw.App(visible=False)
+    #             wb = app.books.open(tmp_path)
+    #             wb.save()
+    #             wb.close()
+    #             app.quit()
+    #
+    #             # 讀取回 base64
+    #             with open(tmp_path, 'rb') as f:
+    #                 modified_binary = f.read()
+    #
+    #             excel_base64 = base64.b64encode(modified_binary).decode('utf-8')
+    #
+    #             return excel_base64, f"成功為 {stock} 創建選擇權Excel檔案"
+    #
+    #         finally:
+    #             # 清理臨時檔案
+    #             if os.path.exists(tmp_path):
+    #                 os.unlink(tmp_path)
+    #
+    #     except Exception as e:
+    #         return "", f"創建選擇權Excel檔案時發生錯誤: {e}"
 
     # def write_barchart_data_to_excel(self, stock, barchart_text, excel_base64):
     #     """將Barchart波動率數據寫入選擇權Excel base64 - 使用xlwings"""
@@ -1755,58 +1755,58 @@ class StockProcess:
         """簡易日誌方法 (如果沒有的話)"""
         print(message)
 
-    def batch_create_option_excels_from_base64(self, stocks):
-        """批次創建多支股票的選擇權Excel檔案"""
-        import tempfile
-        import os
-
-        results = {}
-        temp_dir = tempfile.mkdtemp()
-
-        try:
-            # 🔥 只啟動一次 xlwings
-            app = xw.App(visible=False)
-
-            try:
-                for stock in stocks:
-                    try:
-                        # 解碼模板
-                        excel_binary = base64.b64decode(
-                            Option_Chain_Excel_Template_Base64.strip()
-                        )
-
-                        # 寫入臨時檔案
-                        temp_path = os.path.join(temp_dir, f"{stock}_temp.xlsm")
-                        with open(temp_path, 'wb') as f:
-                            f.write(excel_binary)
-
-                        # 開啟並立即儲存 (確保格式正確)
-                        wb = app.books.open(temp_path)
-                        wb.save()
-                        wb.close()
-
-                        # 讀回 base64
-                        with open(temp_path, 'rb') as f:
-                            modified_binary = f.read()
-
-                        excel_base64 = base64.b64encode(modified_binary).decode('utf-8')
-                        results[stock] = (excel_base64, f"✅ 成功為 {stock} 創建選擇權Excel檔案")
-
-                    except Exception as e:
-                        results[stock] = ("", f"❌ 創建 {stock} 檔案時發生錯誤: {e}")
-
-            finally:
-                app.quit()  # 🔥 只關閉一次
-
-        finally:
-            # 清理臨時檔案
-            for stock in stocks:
-                temp_path = os.path.join(temp_dir, f"{stock}_temp.xlsm")
-                if os.path.exists(temp_path):
-                    os.unlink(temp_path)
-            try:
-                os.rmdir(temp_dir)
-            except:
-                pass
-
-        return results
+    # def batch_create_option_excels_from_base64(self, stocks):
+    #     """批次創建多支股票的選擇權Excel檔案"""
+    #     import tempfile
+    #     import os
+    #
+    #     results = {}
+    #     temp_dir = tempfile.mkdtemp()
+    #
+    #     try:
+    #         # 🔥 只啟動一次 xlwings
+    #         app = xw.App(visible=False)
+    #
+    #         try:
+    #             for stock in stocks:
+    #                 try:
+    #                     # 解碼模板
+    #                     excel_binary = base64.b64decode(
+    #                         Option_Chain_Excel_Template_Base64.strip()
+    #                     )
+    #
+    #                     # 寫入臨時檔案
+    #                     temp_path = os.path.join(temp_dir, f"{stock}_temp.xlsm")
+    #                     with open(temp_path, 'wb') as f:
+    #                         f.write(excel_binary)
+    #
+    #                     # 開啟並立即儲存 (確保格式正確)
+    #                     wb = app.books.open(temp_path)
+    #                     wb.save()
+    #                     wb.close()
+    #
+    #                     # 讀回 base64
+    #                     with open(temp_path, 'rb') as f:
+    #                         modified_binary = f.read()
+    #
+    #                     excel_base64 = base64.b64encode(modified_binary).decode('utf-8')
+    #                     results[stock] = (excel_base64, f"✅ 成功為 {stock} 創建選擇權Excel檔案")
+    #
+    #                 except Exception as e:
+    #                     results[stock] = ("", f"❌ 創建 {stock} 檔案時發生錯誤: {e}")
+    #
+    #         finally:
+    #             app.quit()  # 🔥 只關閉一次
+    #
+    #     finally:
+    #         # 清理臨時檔案
+    #         for stock in stocks:
+    #             temp_path = os.path.join(temp_dir, f"{stock}_temp.xlsm")
+    #             if os.path.exists(temp_path):
+    #                 os.unlink(temp_path)
+    #         try:
+    #             os.rmdir(temp_dir)
+    #         except:
+    #             pass
+    #
+    #     return results

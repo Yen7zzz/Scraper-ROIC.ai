@@ -90,29 +90,73 @@ class StockScraper:
             self.schwab_available = True
 
     async def setup_browser(self):
-        """啟動瀏覽器（加入反偵測）"""
+        """啟動瀏覽器（加入反偵測）- 自動偵測螢幕並置中"""
         print("🔧 正在啟動 Playwright...")
         from playwright.async_api import async_playwright
 
         self.playwright = await async_playwright().start()
 
-        print("🔧 正在啟動 Chromium（反偵測模式）...")
+        print(f"🔧 正在啟動 Chromium（{'無頭' if self.headless else '有頭'}模式，反偵測）...")
+
+        # 🔥 基礎參數（headless 和 有頭模式都需要）
+        base_args = [
+            '--disable-blink-features=AutomationControlled',
+            '--disable-dev-shm-usage',
+            '--disable-web-security',
+            '--disable-features=IsolateOrigins,site-per-process',
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-infobars',
+            '--ignore-certifcate-errors',
+            '--ignore-certifcate-errors-spki-list',
+        ]
+
+        # 🔥 根據 headless 狀態決定是否添加視窗參數
+        if not self.headless:
+            # 只有在有頭模式才處理視窗位置
+            try:
+                from screeninfo import get_monitors
+                monitors = get_monitors()
+                primary_monitor = next((m for m in monitors if m.is_primary), monitors[0])
+
+                screen_width = primary_monitor.width
+                screen_height = primary_monitor.height
+                x_offset = primary_monitor.x
+                y_offset = primary_monitor.y
+
+                print(f"📺 偵測到主螢幕解析度: {screen_width}x{screen_height} (偏移: {x_offset}, {y_offset})")
+                print(f"📺 共 {len(monitors)} 個螢幕")
+
+            except Exception as e:
+                print(f"⚠️ 無法偵測螢幕解析度，使用預設值: {e}")
+                screen_width = 1920
+                screen_height = 1080
+                x_offset = 0
+                y_offset = 0
+
+            # 設定視窗大小
+            window_width = int(screen_width * 0.8)
+            window_height = int(screen_height * 0.85)
+            x_position = x_offset + (screen_width - window_width) // 2
+            y_position = y_offset + (screen_height - window_height) // 2
+
+            print(f"🪟 瀏覽器視窗: {window_width}x{window_height} (位置: {x_position},{y_position})")
+
+            # 添加視窗相關參數
+            base_args.append('--start-maximized')
+        else:
+            # 無頭模式：不添加任何視窗參數
+            print("👻 無頭模式：瀏覽器將在背景執行")
+
         self.browser = await self.playwright.chromium.launch(
             headless=self.headless,
-            args=[
-                '--disable-blink-features=AutomationControlled',
-                '--disable-dev-shm-usage',
-                '--disable-web-security',
-                '--disable-features=IsolateOrigins,site-per-process',
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-infobars',
-                '--window-position=0,0',
-                '--ignore-certifcate-errors',
-                '--ignore-certifcate-errors-spki-list',
-            ]
+            args=base_args
         )
-        print("✅ 瀏覽器啟動成功")
+
+        if self.headless:
+            print("✅ 瀏覽器啟動成功（無頭模式）")
+        else:
+            print("✅ 瀏覽器啟動成功（視窗已置中）")
 
     async def cleanup(self):
         """清理資源 - 強化版，確保完全關閉所有連線，防止記憶體洩漏"""
@@ -694,24 +738,43 @@ class StockScraper:
     #             return {"stock": stock, "error": str(e)}
 
     async def get_seekingalpha_html(self, stock, page, retries=3):
-        """抓取特定股票的摘要資料並回傳 DataFrame。"""
+        """抓取特定股票的摘要資料並回傳 DataFrame - 強化版"""
         if '-' in stock:
             stock = ''.join(['.' if char == '-' else char for char in stock])
 
         URL = f'https://seekingalpha.com/symbol/{stock}/growth'
         attempt = 0
-        # print(URL)
+
         while attempt < retries:
             try:
                 print(f"正在嘗試抓取 {stock} 的資料 (第 {attempt + 1} 次)...")
 
-                # 隨機等待時間
-                await asyncio.sleep(random.uniform(2, 5))
+                # 🔥 強化: 更長的隨機等待
+                await asyncio.sleep(random.uniform(3, 7))
 
-                # 前往頁面 - 改用 domcontentloaded
+                # 前往頁面
                 await page.goto(URL, wait_until='domcontentloaded', timeout=60000)
 
-                # === 🔥 新增：處理 Press & Hold CAPTCHA ===
+                # 🔥 強化: 更真實的瀏覽行為
+                await asyncio.sleep(random.uniform(2, 4))
+
+                # 模擬滑鼠移動軌跡
+                for _ in range(random.randint(2, 4)):
+                    x = random.randint(100, 800)
+                    y = random.randint(100, 600)
+                    await page.mouse.move(x, y)
+                    await asyncio.sleep(random.uniform(0.3, 0.8))
+
+                # 滾動頁面
+                scroll_positions = [200, 400, 600, 400, 200]
+                for pos in scroll_positions:
+                    await page.evaluate(f'window.scrollTo(0, {pos})')
+                    await asyncio.sleep(random.uniform(0.5, 1.2))
+
+                # 🔥 步驟 1: 檢查是否有 Cloudflare Challenge（無限等待）
+                await self._wait_for_cloudflare_resolution(stock, page)
+
+                # 🔥 步驟 2: 檢查是否有 Press & Hold CAPTCHA
                 try:
                     captcha_button = await page.wait_for_selector(
                         'button:has-text("Press & Hold"), div:has-text("Press & Hold")',
@@ -738,32 +801,20 @@ class StockScraper:
                             await page.mouse.up()
 
                             print("✓ 已完成 Press & Hold 驗證")
-                            await asyncio.sleep(random.uniform(2, 4))
+                            await asyncio.sleep(random.uniform(3, 5))
 
-                except Exception as e:
-                    print(f"   未偵測到 CAPTCHA（正常）")
+                except Exception:
+                    print(f"   未偵測到 Press & Hold CAPTCHA（正常）")
 
-                # 模擬人類瀏覽
-                await asyncio.sleep(random.uniform(1, 2))
-                await page.evaluate('window.scrollTo(0, 300)')
-                await asyncio.sleep(random.uniform(0.5, 1))
-                # === 新增結束 ===
-
-                # 使用更精確的選擇器組合
+                # 🔥 步驟 3: 等待關鍵元素載入
                 try:
-                    # 先等待特定的 Growth Rates section
                     await page.wait_for_selector('section[data-test-id="card-container-growth-rates"]', timeout=15000)
-
-                    # 再等待該 section 內的表格
                     await page.wait_for_selector(
                         'section[data-test-id="card-container-growth-rates"] table[data-test-id="table"]',
                         timeout=10000)
-
-                    # 等待 Revenue 行出現（確保內容已載入）
                     await page.wait_for_selector(
                         'section[data-test-id="card-container-growth-rates"] th:has-text("Revenue")', timeout=10000)
 
-                    # 短暫等待確保數據渲染完成
                     await asyncio.sleep(2)
 
                 except Exception as e:
@@ -772,11 +823,8 @@ class StockScraper:
 
                 # 獲取頁面內容
                 content = await page.content()
-
-                # 使用BeautifulSoup解析目標表格
                 soup = BeautifulSoup(content, 'html.parser')
 
-                # 先找到 Growth Rates section，再在其內找表格
                 growth_section = soup.find('section', {'data-test-id': 'card-container-growth-rates'})
 
                 if not growth_section:
@@ -803,13 +851,13 @@ class StockScraper:
 
                     print(f"表頭: {headers}")
 
-                    # 驗證表頭結構是否正確
+                    # 驗證表頭結構
                     expected_headers = ['YoY', '3Y', '5Y', '10Y']
                     if not all(h in headers for h in expected_headers):
                         print(f"表頭結構不符合預期，期望包含: {expected_headers}")
                         raise Exception("表頭結構不正確")
 
-                    # 找到 5Y 和 10Y 在表頭中的位置
+                    # 找到 5Y 和 10Y 的位置
                     try:
                         header_5y_index = headers.index('5Y')
                         header_10y_index = headers.index('10Y')
@@ -823,7 +871,6 @@ class StockScraper:
                     if tbody:
                         rows = tbody.find_all('tr')
 
-                        # 只處理Revenue行並返回5Y和10Y數據
                         for i, row in enumerate(rows):
                             row_data = []
 
@@ -851,11 +898,10 @@ class StockScraper:
                             if 'Revenue' in row_data[0] and 'Revenue per Share' not in row_data[0]:
                                 print(f"找到Revenue行: {row_data}")
 
-                                # 根據表頭位置精確提取5Y和10Y數據
                                 if len(row_data) > max(header_5y_index, header_10y_index):
                                     result = {
-                                        "5Y": row_data[header_5y_index],  # 直接用表頭位置
-                                        "10Y": row_data[header_10y_index]  # 直接用表頭位置
+                                        "5Y": row_data[header_5y_index],
+                                        "10Y": row_data[header_10y_index]
                                     }
                                     print(f"提取結果: {result}")
                                     return result
@@ -875,98 +921,223 @@ class StockScraper:
                 print(f"第 {attempt + 1} 次嘗試失敗: {e}")
                 attempt += 1
                 if attempt < retries:
-                    await asyncio.sleep(random.uniform(10, 20))
+                    # 🔥 強化: 失敗後等待更久
+                    wait_time = random.uniform(20, 40)
+                    print(f"等待 {wait_time:.1f} 秒後重試...")
+                    await asyncio.sleep(wait_time)
 
         return {"error": f"Failed to retrieve data for {stock} after {retries} attempts"}
 
+    async def _wait_for_cloudflare_resolution(self, stock, page):
+        """等待 Cloudflare Challenge 被解決（無時間限制）"""
+
+        # 檢查是否有 Cloudflare Challenge
+        page_content = await page.content()
+
+        # 檢查多種 Cloudflare 特徵
+        cloudflare_indicators = [
+            'cloudflare' in page_content.lower(),
+            'challenge' in page_content.lower(),
+            'just a moment' in page_content.lower(),
+            'checking your browser' in page_content.lower(),
+            'ray id' in page_content.lower() and 'cloudflare' in page_content.lower()
+        ]
+
+        if any(cloudflare_indicators):
+            print("\n" + "🔴" * 30)
+            print(f"⚠️  {stock} 偵測到 Cloudflare Challenge！")
+            print("⚠️  請在瀏覽器中完成驗證")
+            print("⚠️  驗證通過後將自動繼續...")
+            print("🔴" * 30 + "\n")
+
+            check_count = 0
+            while True:
+                await asyncio.sleep(5)
+                check_count += 1
+
+                # 重新檢查頁面內容
+                try:
+                    current_content = await page.content()
+
+                    # 檢查 Cloudflare 是否還在
+                    still_blocked = any([
+                        'cloudflare' in current_content.lower() and 'challenge' in current_content.lower(),
+                        'just a moment' in current_content.lower(),
+                        'checking your browser' in current_content.lower()
+                    ])
+
+                    # 🔥 關鍵：檢查是否已經載入目標內容
+                    has_target_content = 'card-container-growth-rates' in current_content
+
+                    if not still_blocked and has_target_content:
+                        print(f"✅ {stock} Cloudflare Challenge 已通過！")
+                        break
+                    elif not still_blocked and not has_target_content:
+                        # Cloudflare 消失了，但目標內容還沒出現
+                        print(f"   {stock} Cloudflare 已通過，等待頁面載入...")
+                        await asyncio.sleep(3)
+                        # 再檢查一次
+                        current_content = await page.content()
+                        if 'card-container-growth-rates' in current_content:
+                            print(f"✅ {stock} 頁面已完全載入！")
+                            break
+
+                    # 每 20 秒提示一次
+                    if check_count % 4 == 0:
+                        print(f"   {stock} 等待 Cloudflare 驗證中... (已等待 {check_count * 5} 秒)")
+
+                except Exception as e:
+                    print(f"   檢查 Cloudflare 狀態時發生錯誤: {e}")
+                    # 即使出錯也繼續等待
+                    continue
+
+            # 通過後額外等待
+            await asyncio.sleep(random.uniform(2, 4))
+        else:
+            print(f"   未偵測到 Cloudflare Challenge（正常）")
+
     async def run_seekingalpha(self):
-        await self.setup_browser()
+        """執行 SeekingAlpha 數據抓取 - 強制有頭模式處理 Cloudflare"""
 
-        # 創建一個持久的context，加入反偵測
-        context = await self.browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            viewport={"width": 1920, "height": 1080},
-            java_script_enabled=True,
-            locale='en-US',
-            timezone_id='America/New_York',
-            extra_http_headers={
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'DNT': '1',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Sec-Fetch-User': '?1',
-                'Cache-Control': 'max-age=0',
-            }
-        )
+        # 🔥 臨時保存原始 headless 設定
+        original_headless = self.headless
 
-        # 注入反偵測腳本
-        await context.add_init_script("""
-            // 移除 webdriver 標記
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            });
-
-            // 添加 Chrome 對象
-            window.chrome = {
-                runtime: {},
-                loadTimes: function() {},
-                csi: function() {},
-                app: {}
-            };
-
-            // 覆蓋 permissions
-            const originalQuery = window.navigator.permissions.query;
-            window.navigator.permissions.query = (parameters) => (
-                parameters.name === 'notifications' ?
-                    Promise.resolve({ state: Notification.permission }) :
-                    originalQuery(parameters)
-            );
-
-            // 覆蓋 plugins 長度
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5]
-            });
-
-            // 覆蓋 languages
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['en-US', 'en']
-            });
-
-            // 覆蓋 platform
-            Object.defineProperty(navigator, 'platform', {
-                get: () => 'Win32'
-            });
-        """)
+        # 🔥 強制使用有頭模式（顯示瀏覽器）
+        self.headless = False
 
         try:
-            page = await context.new_page()
-            result = []
+            await self.setup_browser()
 
-            # 依序處理每個股票
-            for i, stock in enumerate(self.stocks):
-                print(f"\n{'=' * 50}")
-                print(f"正在處理 {stock} ({i + 1}/{len(self.stocks)})...")
-                print(f"{'=' * 50}")
+            # 🔥 強化: 創建更真實的瀏覽器 context
+            context = await self.browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                viewport={"width": 1920, "height": 1080},
+                java_script_enabled=True,
+                locale='en-US',
+                timezone_id='America/New_York',
+                extra_http_headers={
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'DNT': '1',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Fetch-User': '?1',
+                    'Cache-Control': 'max-age=0',
+                    'Referer': 'https://www.google.com/'
+                },
+                permissions=['geolocation'],
+                geolocation={'latitude': 40.7128, 'longitude': -74.0060},
+            )
 
-                stock_data = await self.get_seekingalpha_html(stock, page)
-                result.append({stock: stock_data})
+            # 🔥 強化反偵測腳本
+            await context.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
 
-                # 每個股票之間的延遲（第一個股票後才延遲）
-                if i < len(self.stocks) - 1:
-                    wait_time = random.uniform(12, 20)
-                    print(f"\n⏳ 等待 {wait_time:.1f} 秒後處理下一個股票...")
-                    await asyncio.sleep(wait_time)
+                window.chrome = {
+                    runtime: {},
+                    loadTimes: function() {},
+                    csi: function() {},
+                    app: {},
+                    webstore: {}
+                };
+
+                const originalQuery = window.navigator.permissions.query;
+                window.navigator.permissions.query = (parameters) => (
+                    parameters.name === 'notifications' ?
+                        Promise.resolve({ state: Notification.permission }) :
+                        originalQuery(parameters)
+                );
+
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [
+                        {name: 'Chrome PDF Plugin', description: 'Portable Document Format', filename: 'internal-pdf-viewer'},
+                        {name: 'Chrome PDF Viewer', description: '', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai'},
+                        {name: 'Native Client', description: '', filename: 'internal-nacl-plugin'}
+                    ]
+                });
+
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['en-US', 'en']
+                });
+
+                Object.defineProperty(navigator, 'platform', {
+                    get: () => 'Win32'
+                });
+
+                Object.defineProperty(navigator, 'hardwareConcurrency', {
+                    get: () => 8
+                });
+
+                Object.defineProperty(navigator, 'deviceMemory', {
+                    get: () => 8
+                });
+
+                const getParameter = WebGLRenderingContext.prototype.getParameter;
+                WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                    if (parameter === 37445) {
+                        return 'Intel Inc.';
+                    }
+                    if (parameter === 37446) {
+                        return 'Intel Iris OpenGL Engine';
+                    }
+                    return getParameter.call(this, parameter);
+                };
+
+                const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+                HTMLCanvasElement.prototype.toDataURL = function(type) {
+                    if (type === 'image/png' && this.width === 280) {
+                        return originalToDataURL.apply(this, ['image/jpeg', 0.92]);
+                    }
+                    return originalToDataURL.apply(this, arguments);
+                };
+            """)
+
+            try:
+                page = await context.new_page()
+                result = []
+
+                # 🔥 新增: 先訪問首頁建立 Session
+                print("🌐 建立 Session...")
+                await page.goto('https://seekingalpha.com/', wait_until='domcontentloaded', timeout=30000)
+                await asyncio.sleep(random.uniform(3, 6))
+
+                # 模擬真實瀏覽行為
+                await page.evaluate('window.scrollTo(0, 300)')
+                await asyncio.sleep(random.uniform(1, 2))
+                await page.evaluate('window.scrollTo(0, 0)')
+                await asyncio.sleep(random.uniform(1, 2))
+
+                # 依序處理每個股票
+                for i, stock in enumerate(self.stocks):
+                    print(f"\n{'=' * 50}")
+                    print(f"正在處理 {stock} ({i + 1}/{len(self.stocks)})...")
+                    print(f"{'=' * 50}")
+
+                    stock_data = await self.get_seekingalpha_html(stock, page)
+                    result.append({stock: stock_data})
+
+                    # 🔥 強化: 增加延遲變化幅度
+                    if i < len(self.stocks) - 1:
+                        base_delay = 3 + (i * 2)
+                        wait_time = random.uniform(base_delay, base_delay + 10)
+                        print(f"\n⏳ 等待 {wait_time:.1f} 秒後處理下一個股票...")
+                        await asyncio.sleep(wait_time)
+
+                return result
+
+            finally:
+                await context.close()
 
         finally:
-            await context.close()
+            # 🔥 恢復原始設定
+            self.headless = original_headless
             await self.cleanup()
-
-        return result
 
     async def fetch_wacc_data(self, stock, semaphore):
         async with semaphore:
@@ -1202,7 +1373,7 @@ class StockScraper:
                 return {stock: None}  # 如果出錯返回None
 
     async def get_TradingView_html(self, stock, page, retries=3):
-        """抓取特定股票的trading-view資料並處理網址證券交易所問題。"""
+        """抓取特定股票的trading-view資料並處理網址證券交易所問題 - 強化版"""
         url_stock_exchange = yf.Ticker(stock).info.get('fullExchangeName', None)
         if url_stock_exchange in ['NasdaqGS', 'NasdaqGM', 'NasdaqCM']:
             url_stock_exchange = 'NASDAQ'
@@ -1212,19 +1383,32 @@ class StockScraper:
 
         URL = f'https://www.tradingview.com/symbols/{url_stock_exchange}-{stock}/financials-earnings/?earnings-period=FY&revenues-period=FY'
         attempt = 0
-        # print(URL)
+
         while attempt < retries:
             try:
                 print(f"正在嘗試抓取 {stock} 的trading-view資料 (第 {attempt + 1} 次)...")
 
-                # 隨機等待時間
-                await asyncio.sleep(random.uniform(2, 5))
+                # 🔥 強化: 更長的隨機等待
+                await asyncio.sleep(random.uniform(3, 7))
 
                 # 前往頁面
                 await page.goto(URL, wait_until='networkidle', timeout=60000)
 
-                # 等待頁面載入完成
-                await page.wait_for_load_state('networkidle')
+                # 🔥 強化: 更真實的瀏覽行為
+                await asyncio.sleep(random.uniform(2, 4))
+
+                # 模擬滑鼠移動軌跡
+                for _ in range(random.randint(2, 4)):
+                    x = random.randint(100, 800)
+                    y = random.randint(100, 600)
+                    await page.mouse.move(x, y)
+                    await asyncio.sleep(random.uniform(0.3, 0.8))
+
+                # 滾動頁面
+                scroll_positions = [200, 400, 600, 400, 200]
+                for pos in scroll_positions:
+                    await page.evaluate(f'window.scrollTo(0, {pos})')
+                    await asyncio.sleep(random.uniform(0.5, 1.2))
 
                 # 等待關鍵內容載入
                 try:
@@ -1239,17 +1423,16 @@ class StockScraper:
                 # 使用BeautifulSoup解析trading-view數值
                 soup = BeautifulSoup(content, 'html.parser')
 
-                # 解析年份 - 找到標題行中的年份
+                # 解析年份
                 years = []
                 year_elements = soup.find_all('div', class_='value-OxVAcLqi')
                 for element in year_elements:
                     text = element.get_text(strip=True)
-                    if text.isdigit() and len(text) == 4:  # 年份是4位數字
+                    if text.isdigit() and len(text) == 4:
                         years.append(int(text))
 
                 # 如果沒找到年份，嘗試另一種方式
                 if not years:
-                    # 查找包含年份的容器
                     values_container = soup.find('div', class_='values-AtxjAQkN')
                     if values_container:
                         year_divs = values_container.find_all('div', class_='value-OxVAcLqi')
@@ -1274,57 +1457,47 @@ class StockScraper:
                 data_types = ['Reported', 'Estimate', 'Surprise']
 
                 for data_type in data_types:
-                    # 找到對應的資料容器
                     container = soup.find('div', {'data-name': data_type})
                     if not container:
                         print(f"找不到 {data_type} 資料容器")
                         continue
 
-                    # 找到該容器中的數值區域
                     values_section = container.find('div', class_='values-C9MdAMrq')
                     if not values_section:
                         print(f"找不到 {data_type} 的數值區域")
                         continue
 
-                    # 獲取所有數值容器
                     value_containers = values_section.find_all('div', class_='container-OxVAcLqi')
 
                     for i, value_container in enumerate(value_containers):
-                        if i >= len(years):  # 防止索引超出範圍
+                        if i >= len(years):
                             break
 
-                        # 檢查是否為鎖定資料（跳過付費內容）
                         lock_button = value_container.find('button', class_='lockButton-N_j3rnsK')
                         if lock_button:
-                            continue  # 跳過鎖定的資料
+                            continue
 
-                        # 提取數值
                         value_div = value_container.find('div', class_='value-OxVAcLqi')
                         if value_div:
                             value = value_div.get_text(strip=True)
-                            # 處理特殊符號
                             if value == '—' or value == '-':
                                 value = None
                             elif value.startswith('‪') and value.endswith('‬'):
-                                # 移除Unicode控制字符
                                 value = value.strip('‪‬')
 
-                            # 儲存數值
                             data[data_type][i] = value
 
-                # 建立DataFrame（原始格式）
+                # 建立DataFrame
                 df_original = pd.DataFrame(data)
 
-                # 只保留有資料的行（至少有一個非None值）
+                # 只保留有資料的行
                 mask = df_original[['Reported', 'Estimate', 'Surprise']].notna().any(axis=1)
                 df_filtered = df_original[mask].reset_index(drop=True)
 
                 # 轉換成橫向格式
                 if len(df_filtered) > 0:
-                    # 創建新的DataFrame，年份作為列標題
                     years_list = df_filtered['Year'].tolist()
 
-                    # 創建橫向格式的數據
                     transposed_data = {
                         'Year': years_list,
                         'Reported': df_filtered['Reported'].tolist(),
@@ -1332,10 +1505,8 @@ class StockScraper:
                         'Surprise': df_filtered['Surprise'].tolist()
                     }
 
-                    # 轉置數據：年份作為列標題，指標作為行
                     result_dict = {}
 
-                    # 第一行：年份
                     for i, year in enumerate(years_list):
                         result_dict[str(year)] = [
                             transposed_data['Reported'][i],
@@ -1343,7 +1514,6 @@ class StockScraper:
                             transposed_data['Surprise'][i]
                         ]
 
-                    # 創建最終的DataFrame，以指標名稱作為索引
                     df_final = pd.DataFrame(result_dict, index=['Reported', 'Estimate', 'Surprise'])
 
                     print(f"成功解析 {stock} 的資料，格式為 {df_final.shape[1]} 年份 x {df_final.shape[0]} 指標")
@@ -1356,20 +1526,278 @@ class StockScraper:
                 print(f"第 {attempt + 1} 次嘗試失敗: {e}")
                 attempt += 1
                 if attempt < retries:
-                    await asyncio.sleep(random.uniform(5, 10))
+                    wait_time = random.uniform(20, 40)  # 🔥 增加重試等待時間
+                    print(f"等待 {wait_time:.1f} 秒後重試...")
+                    await asyncio.sleep(wait_time)
 
         print(f"Failed to retrieve TradingView data for {stock} after {retries} attempts")
         return None
 
     async def run_TradingView(self):
-        await self.setup_browser()
-        semaphore = asyncio.Semaphore(self.max_concurrent)
+        """批次執行 TradingView 數據抓取 - 先集中處理 CAPTCHA，再批次爬蟲"""
+
+        # 🔥 臨時保存原始 headless 設定
+        original_headless = self.headless
+
+        # 🔥 強制使用有頭模式（顯示瀏覽器）
+        self.headless = False
+
         try:
-            tasks = [self.fetch_TradingView_data(stock, semaphore) for stock in self.stocks]
-            result = await asyncio.gather(*tasks)
+            await self.setup_browser()
+
+            print("\n" + "=" * 60)
+            print("🚀 階段 1: 集中處理 TradingView CAPTCHA 驗證")
+            print("⚠️  即將打開所有股票的頁面")
+            print("⚠️  請依序完成所有 CAPTCHA 驗證")
+            print("⚠️  完成所有驗證後，程式將自動開始抓取數據")
+            print("=" * 60 + "\n")
+
+            # 🔥 階段 1: 打開所有頁面並處理 CAPTCHA
+            pages_and_contexts = await self._open_all_tradingview_pages()
+
+            if not pages_and_contexts:
+                print("❌ 無法打開任何頁面")
+                return []
+
+            print("\n" + "=" * 60)
+            print("✅ 所有 CAPTCHA 已通過！")
+            print("🚀 階段 2: 開始批次抓取 TradingView 數據")
+            print("=" * 60 + "\n")
+
+            # 🔥 階段 2: 批次抓取數據
+            result = []
+            for i, (stock, page, context) in enumerate(pages_and_contexts):
+                print(f"\n{'=' * 50}")
+                print(f"抓取 {stock} 的 TradingView 數據 ({i + 1}/{len(pages_and_contexts)})")
+                print(f"{'=' * 50}")
+
+                try:
+                    tradingview_data = await self._extract_tradingview_from_page(stock, page)
+                    result.append({stock: tradingview_data})
+
+                    if tradingview_data is not None:
+                        print(f"✓ {stock}: 成功抓取 {tradingview_data.shape[1]} 年份數據")
+                    else:
+                        print(f"⚠️ {stock}: 無數據")
+                except Exception as e:
+                    print(f"❌ {stock} 抓取失敗: {e}")
+                    result.append({stock: None})
+
+                # 延遲（最後一個不延遲）
+                if i < len(pages_and_contexts) - 1:
+                    await asyncio.sleep(random.uniform(0.5, 1.5))
+
+            # 🔥 關閉所有頁面和 context
+            print("\n🧹 清理資源...")
+            for stock, page, context in pages_and_contexts:
+                try:
+                    await context.close()
+                except:
+                    pass
+
+            return result
+
         finally:
+            # 🔥 恢復原始設定
+            self.headless = original_headless
             await self.cleanup()
-        return result
+
+    async def _open_all_tradingview_pages(self):
+        """打開所有股票的 TradingView 頁面並等待 CAPTCHA 通過（無時間限制）"""
+        pages_and_contexts = []
+
+        for i, stock in enumerate(self.stocks):
+            print(f"\n{'=' * 50}")
+            print(f"打開 {stock} 的 TradingView 頁面 ({i + 1}/{len(self.stocks)})")
+            print(f"{'=' * 50}")
+
+            try:
+                # 創建新的 context
+                context = await self.browser.new_context(
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                    viewport={"width": 1920, "height": 1080},
+                    java_script_enabled=True,
+                    locale='zh-TW',
+                    timezone_id='Asia/Taipei',
+                    extra_http_headers={
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                        'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+                        'Accept-Encoding': 'gzip, deflate, br',
+                        'DNT': '1',
+                        'Connection': 'keep-alive',
+                        'Upgrade-Insecure-Requests': '1',
+                    }
+                )
+
+                # 注入反偵測腳本
+                await context.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined
+                    });
+                    window.chrome = {
+                        runtime: {},
+                        loadTimes: function() {},
+                        csi: function() {},
+                        app: {}
+                    };
+                    Object.defineProperty(navigator, 'plugins', {
+                        get: () => [1, 2, 3, 4, 5]
+                    });
+                    Object.defineProperty(navigator, 'languages', {
+                        get: () => ['zh-TW', 'zh', 'en-US', 'en']
+                    });
+                """)
+
+                page = await context.new_page()
+
+                # 構建 URL
+                url_stock_exchange = yf.Ticker(stock).info.get('fullExchangeName', None)
+                if url_stock_exchange in ['NasdaqGS', 'NasdaqGM', 'NasdaqCM']:
+                    url_stock_exchange = 'NASDAQ'
+
+                stock_symbol = ''.join(['.' if char == '-' else char for char in stock]) if '-' in stock else stock
+                URL = f'https://www.tradingview.com/symbols/{url_stock_exchange}-{stock_symbol}/financials-earnings/?earnings-period=FY&revenues-period=FY'
+
+                # 訪問頁面
+                await asyncio.sleep(random.uniform(2, 4))
+                await page.goto(URL, wait_until='domcontentloaded', timeout=60000)
+                await asyncio.sleep(random.uniform(2, 3))
+
+                # 🔥 檢查 CAPTCHA（無限等待）- 重用 Beta 的方法
+                await self._wait_for_captcha_resolution(stock, page)
+
+                # 保存頁面和 context
+                pages_and_contexts.append((stock, page, context))
+                print(f"✓ {stock} 頁面已就緒")
+
+                # 每個頁面之間延遲
+                if i < len(self.stocks) - 1:
+                    await asyncio.sleep(random.uniform(1, 2))
+
+            except Exception as e:
+                print(f"❌ {stock} 頁面打開失敗: {e}")
+                if context:
+                    try:
+                        await context.close()
+                    except:
+                        pass
+
+        return pages_and_contexts
+
+    async def _extract_tradingview_from_page(self, stock, page):
+        """從已載入的頁面中提取 TradingView 數據"""
+        try:
+            # 模擬人類瀏覽行為（與 get_TradingView_html 相同的邏輯）
+            scroll_positions = [200, 400, 600, 400, 200]
+            for pos in scroll_positions:
+                await page.evaluate(f'window.scrollTo(0, {pos})')
+                await asyncio.sleep(random.uniform(0.3, 0.6))
+
+            # 等待關鍵內容載入
+            try:
+                await page.wait_for_selector('h1', timeout=30000)
+                await asyncio.sleep(3)
+            except Exception as e:
+                print(f"等待頁面載入時發生錯誤: {e}")
+
+            # 獲取頁面內容
+            content = await page.content()
+            soup = BeautifulSoup(content, 'html.parser')
+
+            # === 以下是原有的解析邏輯 ===
+
+            # 解析年份
+            years = []
+            year_elements = soup.find_all('div', class_='value-OxVAcLqi')
+            for element in year_elements:
+                text = element.get_text(strip=True)
+                if text.isdigit() and len(text) == 4:
+                    years.append(int(text))
+
+            if not years:
+                values_container = soup.find('div', class_='values-AtxjAQkN')
+                if values_container:
+                    year_divs = values_container.find_all('div', class_='value-OxVAcLqi')
+                    for div in year_divs:
+                        text = div.get_text(strip=True)
+                        if text.isdigit() and len(text) == 4:
+                            years.append(int(text))
+
+            if not years:
+                print(f"無法找到年份資料對於 {stock}")
+                return None
+
+            # 初始化資料字典
+            data = {
+                'Year': years,
+                'Reported': [None] * len(years),
+                'Estimate': [None] * len(years),
+                'Surprise': [None] * len(years)
+            }
+
+            # 解析三種類型的資料
+            data_types = ['Reported', 'Estimate', 'Surprise']
+
+            for data_type in data_types:
+                container = soup.find('div', {'data-name': data_type})
+                if not container:
+                    continue
+
+                values_section = container.find('div', class_='values-C9MdAMrq')
+                if not values_section:
+                    continue
+
+                value_containers = values_section.find_all('div', class_='container-OxVAcLqi')
+
+                for i, value_container in enumerate(value_containers):
+                    if i >= len(years):
+                        break
+
+                    lock_button = value_container.find('button', class_='lockButton-N_j3rnsK')
+                    if lock_button:
+                        continue
+
+                    value_div = value_container.find('div', class_='value-OxVAcLqi')
+                    if value_div:
+                        value = value_div.get_text(strip=True)
+                        if value == '—' or value == '-':
+                            value = None
+                        elif value.startswith('‪') and value.endswith('‬'):
+                            value = value.strip('‪‬')
+                        data[data_type][i] = value
+
+            # 建立DataFrame
+            df_original = pd.DataFrame(data)
+            mask = df_original[['Reported', 'Estimate', 'Surprise']].notna().any(axis=1)
+            df_filtered = df_original[mask].reset_index(drop=True)
+
+            # 轉換成橫向格式
+            if len(df_filtered) > 0:
+                years_list = df_filtered['Year'].tolist()
+                transposed_data = {
+                    'Year': years_list,
+                    'Reported': df_filtered['Reported'].tolist(),
+                    'Estimate': df_filtered['Estimate'].tolist(),
+                    'Surprise': df_filtered['Surprise'].tolist()
+                }
+
+                result_dict = {}
+                for i, year in enumerate(years_list):
+                    result_dict[str(year)] = [
+                        transposed_data['Reported'][i],
+                        transposed_data['Estimate'][i],
+                        transposed_data['Surprise'][i]
+                    ]
+
+                df_final = pd.DataFrame(result_dict, index=['Reported', 'Estimate', 'Surprise'])
+                print(f"成功解析 {stock} 的資料")
+                return df_final
+            else:
+                return None
+
+        except Exception as e:
+            print(f"提取 TradingView 數據失敗: {e}")
+            return None
 
     async def run_beta(self):
         """批次執行 Beta 值抓取 - 先集中處理 CAPTCHA，再批次爬蟲"""
@@ -1519,13 +1947,173 @@ class StockScraper:
         return pages_and_contexts
 
     async def _wait_for_captcha_resolution(self, stock, page):
-        """等待 CAPTCHA 被解決（無時間限制）"""
+        """等待 CAPTCHA 被解決（無時間限制）+ 強制置中 reCAPTCHA"""
+
+        # 🔥 方案 1：注入 CSS 強制置中 reCAPTCHA 的所有元素
+        try:
+            await page.add_style_tag(content="""
+                /* 置中 reCAPTCHA 的主容器 */
+                .g-recaptcha {
+                    display: flex !important;
+                    justify-content: center !important;
+                    align-items: center !important;
+                    position: fixed !important;
+                    top: 50% !important;
+                    left: 50% !important;
+                    transform: translate(-50%, -50%) !important;
+                    z-index: 999999 !important;
+                }
+
+                /* 置中所有 reCAPTCHA 的 iframe */
+                iframe[src*="recaptcha"],
+                iframe[src*="google.com/recaptcha"],
+                iframe[title*="reCAPTCHA"] {
+                    position: fixed !important;
+                    top: 50% !important;
+                    left: 50% !important;
+                    transform: translate(-50%, -50%) !important;
+                    z-index: 999999 !important;
+                }
+
+                /* 隱藏背景的干擾元素 */
+                .tv-captcha-page__message-wrap {
+                    position: relative !important;
+                }
+
+                /* 確保表單不會影響 CAPTCHA 位置 */
+                #frmCaptcha {
+                    display: flex !important;
+                    flex-direction: column !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+                }
+
+                /* 隱藏或調整其他內容 */
+                .tv-text h1,
+                .tv-text p {
+                    position: relative !important;
+                    z-index: 1 !important;
+                }
+            """)
+            print(f"   ✓ 已注入 reCAPTCHA 置中 CSS")
+        except Exception as e:
+            print(f"   ⚠️ 注入 CSS 失敗: {e}")
+
+        # 🔥 方案 2：等待 reCAPTCHA 載入後，用 JavaScript 強制移動
+        try:
+            await page.evaluate("""
+                async () => {
+                    // 等待 reCAPTCHA iframe 完全載入
+                    const waitForRecaptcha = () => {
+                        return new Promise((resolve) => {
+                            const checkInterval = setInterval(() => {
+                                // 尋找所有 reCAPTCHA iframe
+                                const recaptchaIframes = document.querySelectorAll('iframe[src*="recaptcha"]');
+
+                                if (recaptchaIframes.length > 0) {
+                                    clearInterval(checkInterval);
+                                    resolve(recaptchaIframes);
+                                }
+                            }, 100);
+
+                            // 10 秒後超時
+                            setTimeout(() => {
+                                clearInterval(checkInterval);
+                                resolve([]);
+                            }, 10000);
+                        });
+                    };
+
+                    const iframes = await waitForRecaptcha();
+
+                    if (iframes.length > 0) {
+                        console.log('找到', iframes.length, '個 reCAPTCHA iframe');
+
+                        iframes.forEach((iframe, index) => {
+                            // 強制設定 iframe 位置
+                            iframe.style.cssText = `
+                                position: fixed !important;
+                                top: 50% !important;
+                                left: 50% !important;
+                                transform: translate(-50%, -50%) !important;
+                                z-index: ${999999 + index} !important;
+                                margin: 0 !important;
+                            `;
+
+                            console.log('✓ iframe', index, '已置中');
+                        });
+
+                        // 也處理 .g-recaptcha 容器
+                        const recaptchaDiv = document.querySelector('.g-recaptcha');
+                        if (recaptchaDiv) {
+                            recaptchaDiv.style.cssText = `
+                                position: fixed !important;
+                                top: 50% !important;
+                                left: 50% !important;
+                                transform: translate(-50%, -50%) !important;
+                                z-index: 999998 !important;
+                                display: flex !important;
+                                justify-content: center !important;
+                                align-items: center !important;
+                            `;
+                            console.log('✓ .g-recaptcha 容器已置中');
+                        }
+
+                        // 調整頁面背景，讓 CAPTCHA 更明顯
+                        const messageWrap = document.querySelector('.tv-captcha-page__message-wrap');
+                        if (messageWrap) {
+                            messageWrap.style.opacity = '0.3';
+                        }
+                    }
+                }
+            """)
+            print(f"   ✓ 已執行 reCAPTCHA 置中腳本")
+        except Exception as e:
+            print(f"   ⚠️ 執行置中腳本失敗: {e}")
+
+        # 🔥 方案 3：持續監控並調整（防止 reCAPTCHA 重新載入後位置跑掉）
+        try:
+            await page.evaluate("""
+                () => {
+                    // 建立 MutationObserver 監控 DOM 變化
+                    const observer = new MutationObserver(() => {
+                        const iframes = document.querySelectorAll('iframe[src*="recaptcha"]');
+                        iframes.forEach((iframe) => {
+                            if (iframe.style.position !== 'fixed') {
+                                iframe.style.cssText = `
+                                    position: fixed !important;
+                                    top: 50% !important;
+                                    left: 50% !important;
+                                    transform: translate(-50%, -50%) !important;
+                                    z-index: 999999 !important;
+                                `;
+                            }
+                        });
+                    });
+
+                    observer.observe(document.body, {
+                        childList: true,
+                        subtree: true
+                    });
+
+                    // 30 秒後停止監控
+                    setTimeout(() => observer.disconnect(), 30000);
+                }
+            """)
+            print(f"   ✓ 已啟動 reCAPTCHA 持續監控")
+        except Exception as e:
+            print(f"   ⚠️ 啟動監控失敗: {e}")
+
+        # 等待一下讓腳本執行
+        await asyncio.sleep(2)
+
         captcha_visible = await self._check_captcha_visible(page)
 
         if captcha_visible:
             print("\n" + "🔴" * 30)
             print(f"⚠️  {stock} 偵測到 CAPTCHA 驗證！")
-            print("⚠️  請在瀏覽器中手動完成驗證")
+            print("⚠️  reCAPTCHA 應該已經移到畫面正中間")
+            print("⚠️  請手動完成驗證")
             print("⚠️  完成後將自動繼續...")
             print("🔴" * 30 + "\n")
 
@@ -1544,6 +2132,25 @@ class StockScraper:
                 # 每 20 秒提示一次
                 if check_count % 4 == 0:
                     print(f"   {stock} 等待中... (已等待 {check_count * 5} 秒)")
+
+                    # 🔥 每 20 秒重新檢查並調整位置（以防萬一）
+                    try:
+                        await page.evaluate("""
+                            () => {
+                                const iframes = document.querySelectorAll('iframe[src*="recaptcha"]');
+                                iframes.forEach((iframe) => {
+                                    iframe.style.cssText = `
+                                        position: fixed !important;
+                                        top: 50% !important;
+                                        left: 50% !important;
+                                        transform: translate(-50%, -50%) !important;
+                                        z-index: 999999 !important;
+                                    `;
+                                });
+                            }
+                        """)
+                    except:
+                        pass
 
             # CAPTCHA 通過後額外等待
             await asyncio.sleep(random.uniform(2, 4))
