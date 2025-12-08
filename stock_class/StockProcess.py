@@ -597,8 +597,8 @@ class StockProcess:
             ws = wb.worksheets[3]  # 使用第四個工作表
 
             # 清除舊資料
-            ws['C5'] = None  # 你需要根據實際Excel模板調整位置
-
+            ws['C6'] = None  # 你需要根據實際Excel模板調整位置
+            ws['C7'] = None
             # 【關鍵修復】立即保存清除後的版本
             output_buffer = io.BytesIO()
             wb.save(output_buffer)
@@ -609,9 +609,9 @@ class StockProcess:
             if not wacc_value:
                 return cleaned_base64, 'EPS_PE_MarketCap: 無原始資料，已清空舊數據'
 
-            # 例如：假設WACC值寫入B2儲存格
-            ws['C5'] = wacc_value  # 你需要根據實際Excel模板調整位置
-
+            # 例如：假設WACC值寫入C6C7儲存格
+            ws['C6'] = wacc_value  # 你需要根據實際Excel模板調整位置
+            ws['C7'] = wacc_value
             # 保存修改後的Excel
             output_buffer = io.BytesIO()
             wb.save(output_buffer)
@@ -831,14 +831,14 @@ class StockProcess:
                     return None, f"無法轉換 {stock} 的revenue數值為浮點數: 5Y={revenue_5y_str}, 10Y={revenue_10y_str}"
 
                 # 寫入對應的儲存格
-                ws['F4'] = None
                 ws['F5'] = None
-                ws['F2'] = None
+                ws['F6'] = None
+                ws['F3'] = None
 
                 # 寫入對應的儲存格
-                ws['F4'] = revenue_5y  # 5Y數值寫入F4
-                ws['F5'] = revenue_10y  # 10Y數值寫入F5
-                ws['F2'] = revenue_10y  # 10Y數值寫入F5
+                ws['F5'] = revenue_5y  # 5Y數值寫入F5
+                ws['F6'] = revenue_10y  # 10Y數值寫入F6
+                ws['F3'] = revenue_10y  # 10Y數值寫入F3
 
                 # 可以添加一些格式設定
                 # ws['F4'].font = Font(bold=True)
