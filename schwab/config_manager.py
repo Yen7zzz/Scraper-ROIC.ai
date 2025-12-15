@@ -19,25 +19,45 @@ class ConfigManager:
     """配置管理器 - 處理 API 憑證的存儲和讀取"""
 
     def __init__(self):
-        # 確定基礎路徑
+        # 🔥 修正：確定基礎路徑（打包後和開發環境統一處理）
         if getattr(sys, 'frozen', False):
+            # 打包後：exe 所在目錄
             self.base_path = os.path.dirname(sys.executable)
+            print(f"🔥 [打包模式] Base path: {self.base_path}")
         else:
-            self.base_path = os.path.dirname(os.path.abspath(__file__))
+            # 開發環境：專案根目錄（schwab 資料夾的上一層）
+            current_file = os.path.abspath(__file__)
+            self.base_path = os.path.dirname(current_file)  # schwab 資料夾
+            print(f"🔥 [開發模式] Base path: {self.base_path}")
 
         self.env_path = os.path.join(self.base_path, '.env')
         self.tokens_path = os.path.join(self.base_path, 'tokens.json')
 
+        # 🔥 新增：啟動時顯示路徑資訊
+        print(f"📁 .env 路徑: {self.env_path}")
+        print(f"📁 tokens.json 路徑: {self.tokens_path}")
+        print(f"📁 .env 存在: {os.path.exists(self.env_path)}")
+        print(f"📁 tokens.json 存在: {os.path.exists(self.tokens_path)}")
+
     def config_exists(self):
         """檢查配置檔案是否存在"""
-        return os.path.exists(self.env_path)
+        exists = os.path.exists(self.env_path)
+        print(f"🔍 檢查 .env 是否存在: {exists}")
+        return exists
 
     def load_config(self):
         """讀取 .env 配置"""
         try:
+            if not os.path.exists(self.env_path):
+                print(f"❌ .env 檔案不存在: {self.env_path}")
+                return None
+
             config = {}
             with open(self.env_path, 'r', encoding='utf-8') as f:
-                for line in f:
+                content = f.read()
+                print(f"📄 .env 內容長度: {len(content)} 字元")
+
+                for line in content.split('\n'):
                     line = line.strip()
                     if not line or line.startswith('#'):
                         continue
@@ -50,27 +70,52 @@ class ConfigManager:
                         elif value.startswith("'") and value.endswith("'"):
                             value = value[1:-1]
                         config[key] = value
+
+            print(f"✅ 成功載入配置，包含 {len(config)} 個設定")
+            print(f"   - app_key: {'已設定' if 'app_key' in config else '❌ 缺失'}")
+            print(f"   - app_secret: {'已設定' if 'app_secret' in config else '❌ 缺失'}")
+
             return config if config else None
         except Exception as e:
-            print(f"讀取配置失敗: {e}")
+            print(f"❌ 讀取配置失敗: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def save_config(self, config_data):
         """保存配置到 .env 檔案"""
         try:
+            print(f"💾 正在保存配置到: {self.env_path}")
+
             with open(self.env_path, 'w', encoding='utf-8') as f:
                 f.write("# INCLUDE THIS FILE IN YOUR .gitignore\n\n")
                 f.write(f'app_key = "{config_data["app_key"]}"\n')
                 f.write(f'app_secret = "{config_data["app_secret"]}"\n')
                 f.write(f'callback_url = "https://127.0.0.1"\n')
-            return True
+
+            # 驗證檔案是否真的被寫入
+            if os.path.exists(self.env_path):
+                file_size = os.path.getsize(self.env_path)
+                print(f"✅ 配置已保存，檔案大小: {file_size} bytes")
+                return True
+            else:
+                print(f"❌ 保存後檔案不存在！")
+                return False
+
         except Exception as e:
-            print(f"保存配置失敗: {e}")
+            print(f"❌ 保存配置失敗: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def has_valid_token(self):
         """檢查是否有有效的 token"""
-        return os.path.exists(self.tokens_path)
+        exists = os.path.exists(self.tokens_path)
+        print(f"🔍 檢查 tokens.json 是否存在: {exists}")
+        if exists:
+            file_size = os.path.getsize(self.tokens_path)
+            print(f"   檔案大小: {file_size} bytes")
+        return exists
 
     def is_token_valid(self, buffer_days=1):
         """檢查 Refresh Token 是否仍然有效"""
@@ -78,6 +123,7 @@ class ConfigManager:
 
         try:
             if not os.path.exists(self.tokens_path):
+                print("❌ tokens.json 不存在")
                 return False, 0, None
 
             with open(self.tokens_path, 'r') as f:
@@ -86,6 +132,7 @@ class ConfigManager:
             # 取得 refresh_token 發行時間
             refresh_issued = tokens.get('refresh_token_issued')
             if not refresh_issued:
+                print("❌ 找不到 refresh_token_issued 欄位")
                 return False, 0, None
 
             # 解析 ISO 格式時間
@@ -103,6 +150,12 @@ class ConfigManager:
 
             # 判斷是否有效（剩餘時間大於緩衝天數）
             is_valid = remaining_days > buffer_days
+
+            print(f"📅 Token 狀態:")
+            print(f"   發行時間: {issued_time}")
+            print(f"   過期時間: {expiry_time}")
+            print(f"   剩餘天數: {remaining_days:.1f}")
+            print(f"   是否有效: {is_valid}")
 
             return is_valid, remaining_hours, expiry_time
 
