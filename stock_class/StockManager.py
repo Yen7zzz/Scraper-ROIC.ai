@@ -304,6 +304,40 @@ class StockManager:
                     if TradingView_value is None:
                         print(f"❌ {stock} 的TradingView值為None")
 
+    async def process_earnings_dates(self):
+        """處理財報日期（支援雙模板）"""
+        raw_earnings = await self.scraper.run_earnings_dates()
+        print(f"獲取到的財報日期數據: {raw_earnings}")
+
+        for earnings_dict in raw_earnings:
+            for stock, earnings_data in earnings_dict.items():
+                if earnings_data is None:
+                    print(f"❌ {stock} 的財報日期為 None")
+                    continue
+
+                # 🔥 寫入 Fundamental 模板（如果有）
+                if stock in self.fundamental_excel_files:
+                    modified_base64, message = self.processor.write_earnings_date_to_fundamental_excel(
+                        stock=stock,
+                        earnings_data=earnings_data,
+                        excel_base64=self.fundamental_excel_files[stock]
+                    )
+                    if modified_base64:
+                        self.fundamental_excel_files[stock] = modified_base64
+                        print(f"✅ {message}")
+                    else:
+                        print(f"❌ {message}")
+
+                # 🔥 寫入 Option 模板（如果有）
+                if stock in self.option_excel_files:
+                    file_path, message = self.processor.write_earnings_date_to_option_excel(
+                        stock=stock,
+                        earnings_data=earnings_data,
+                        file_path=self.option_excel_files[stock]
+                    )
+                    # Option 模板的檔案路徑保持不變
+                    print(f"{'✅' if '成功' in message else '❌'} {message}")
+
     async def process_combined_summary_and_metrics(self):
         """處理合併的Summary和指標數據"""
         summary_results, metrics_results = await self.scraper.run_combined_summary_and_metrics()

@@ -858,6 +858,90 @@ class StockProcess:
         except Exception as e:
             return None, f"寫入 {stock} 的revenue growth數據時發生錯誤: {e}"
 
+    def write_earnings_date_to_fundamental_excel(self, stock, earnings_data, excel_base64):
+        """
+        將財報日期寫入股票分析模板（Fundamental Excel）
+
+        ⚠️ 注意：請根據你的模板修改以下儲存格位置
+
+        參數:
+            stock: 股票代碼
+            earnings_data: {'earnings_date': '2026年3月20日 週五 下午9:00', 'status': 'ESTIMATE'}
+            excel_base64: Excel 的 base64 字串
+        """
+        try:
+            print(f"正在處理 {stock} 的財報日期（Fundamental 模板）: {earnings_data}")
+
+            # 解碼 Excel
+            excel_binary = base64.b64decode(excel_base64)
+            excel_buffer = io.BytesIO(excel_binary)
+            wb = load_workbook(excel_buffer)
+
+            # 寫入第一個工作表
+            ws = wb.worksheets[0]
+
+            ws['EO12'] = None  # 清除舊資料
+            ws['EO13'] = None
+
+            if earnings_data:
+                ws['EO12'] = earnings_data.get('earnings_date', '')  # 完整日期時間
+                ws['EO13'] = earnings_data.get('status', '')  # ESTIMATE/CONFIRMED
+
+            # 保存修改
+            output_buffer = io.BytesIO()
+            wb.save(output_buffer)
+            output_buffer.seek(0)
+            modified_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
+
+            return modified_base64, f"✅ 成功將 {stock} 的財報日期寫入 Fundamental 模板"
+
+        except Exception as e:
+            return excel_base64, f"❌ 寫入 {stock} Fundamental 模板時發生錯誤: {e}"
+
+    def write_earnings_date_to_option_excel(self, stock, earnings_data, file_path):
+        """
+        將財報日期寫入選擇權模板（Option Chain Template）
+
+        ⚠️ 注意：請根據你的模板修改以下儲存格位置
+
+        參數:
+            stock: 股票代碼
+            earnings_data: {'earnings_date': '2026年3月20日 週五 下午9:00', 'status': 'ESTIMATE'}
+            file_path: Excel 檔案的實體路徑（非 base64）
+        """
+        import xlwings as xw
+
+        try:
+            print(f"正在處理 {stock} 的財報日期（Option 模板）: {earnings_data}")
+
+            # 檢查檔案是否存在
+            if not os.path.exists(file_path):
+                return file_path, f"❌ 檔案不存在: {file_path}"
+
+            # 用 xlwings 打開（不顯示視窗）
+            app = xw.App(visible=False)
+
+            try:
+                wb = app.books.open(file_path)
+                ws = wb.sheets[2]  # 第3個工作表（或根據你的需求修改）
+
+                ws.range('I9').value = None  # 清除舊資料
+                ws.range('I10').value = None
+
+                if earnings_data:
+                    ws.range('I9').value = earnings_data.get('earnings_date', '')  # 完整日期時間
+                    ws.range('I10').value = earnings_data.get('status', '')  # ESTIMATE/CONFIRMED
+
+                wb.save()
+                wb.close()
+
+                return file_path, f"✅ 成功將 {stock} 的財報日期寫入 Option 模板"
+
+            finally:
+                app.quit()
+
+        except Exception as e:
+            return file_path, f"❌ 寫入 {stock} Option 模板時發生錯誤: {e}"
 
     async def _write_to_excel(self, excel_base64, dic_data):
         """寫入Excel文件"""

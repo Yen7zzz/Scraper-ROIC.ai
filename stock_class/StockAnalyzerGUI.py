@@ -1115,6 +1115,15 @@ class StockAnalyzerGUI:
                 await manager.process_TradingView()
                 self.log("✅ Trading View 資料處理完成")
 
+                # 🔥 新增：財報日期（earningshub）
+                check_if_stopped()
+                current_step += 1
+                step_num = f"{current_step}/{total_steps}"
+                self.update_progress(current_step, total_steps, "[股票] 抓取財報公布日期")
+                self.log(f"\n📅 步驟 {step_num}：[股票] 正在抓取財報公布日期（earningshub）...")
+                await manager.process_earnings_dates()
+                self.log("✅ 財報公布日期處理完成")
+
                 # 保存檔案
                 check_if_stopped()
                 current_step += 1
@@ -1131,10 +1140,10 @@ class StockAnalyzerGUI:
             saved_option_files = []
             if do_option_analysis:
                 check_if_stopped()
-                self.log("\n【第二階段：選擇權分析】")
+                self.log("\n【第二階段:選擇權分析】")
                 self.log("🎯" + "=" * 80)
 
-                # 如果股票分析沒執行，需要創建 manager
+                # 如果股票分析沒執行,需要創建 manager
                 if not do_stock_analysis:
                     self.update_status("初始化選擇權分析系統")
                     self.log("🔧 正在初始化選擇權爬蟲系統...")
@@ -1154,30 +1163,27 @@ class StockAnalyzerGUI:
                 current_step += 1
                 step_num = f"{current_step}/{total_steps}"
                 self.update_progress(current_step, total_steps, "[選擇權] 初始化 Excel 檔案")
-                self.log(f"\n📄 步驟 {step_num}：[選擇權] 正在初始化 Excel 檔案...")
+                self.log(f"\n📄 步驟 {step_num}:[選擇權] 正在初始化 Excel 檔案...")
 
                 try:
                     success = await manager.initialize_option_excel_files()
                     if not success:
                         self.log("⚠️ 選擇權 Excel 檔案初始化失敗")
                         if do_stock_analysis:
-                            self.log("⚠️ 股票分析已完成，將跳過選擇權分析")
-                            # 繼續執行，不中斷
+                            self.log("⚠️ 股票分析已完成,將跳過選擇權分析")
                         else:
-                            self.log("❌ 選擇權分析失敗，停止爬蟲")
-                            self.update_status("爬蟲失敗：選擇權 Excel 初始化錯誤")
+                            self.log("❌ 選擇權分析失敗,停止爬蟲")
+                            self.update_status("爬蟲失敗:選擇權 Excel 初始化錯誤")
                             return
                     else:
                         self.log("✅ 選擇權 Excel 檔案初始化完成")
-
-                        # 🔥 ADD 開始 - 新增這段 ✅
 
                         # 🔥 步驟 1: 批次抓取所有數據
                         check_if_stopped()
                         current_step += 1
                         step_num = f"{current_step}/{total_steps}"
                         self.update_progress(current_step, total_steps, "[選擇權] 批次抓取所有數據")
-                        self.log(f"\n📊 步驟 {step_num}：[選擇權] 正在批次抓取 Beta、Barchart 和 Option Chain...")
+                        self.log(f"\n📊 步驟 {step_num}:[選擇權] 正在批次抓取 Beta、Barchart 和 Option Chain...")
 
                         # 依序抓取但不寫入
                         await manager.process_beta()
@@ -1186,22 +1192,40 @@ class StockAnalyzerGUI:
 
                         self.log("✅ 所有選擇權數據抓取完成")
 
+                        # 🔥 新增：財報日期處理（針對 Option 模板）
+                        check_if_stopped()
+                        current_step += 1
+                        step_num = f"{current_step}/{total_steps}"
+                        self.update_progress(current_step, total_steps, "[選擇權] 抓取財報公布日期")
+                        self.log(f"\n📅 步驟 {step_num}:[選擇權] 正在寫入財報公布日期到選擇權模板...")
+
+                        # 🔥 關鍵：如果股票分析沒執行，需要先抓取財報日期
+                        if not do_stock_analysis:
+                            await manager.process_earnings_dates()
+                        else:
+                            # 如果已經在股票分析階段抓取過，只需要寫入 Option 模板
+                            self.log("   ℹ️ 財報日期已在股票分析階段抓取，正在寫入選擇權模板...")
+
+                            # 直接從已抓取的數據寫入（需要確保 scraper 已執行過 run_earnings_dates）
+                            # 或者重新執行一次（比較安全）
+                            await manager.process_earnings_dates()
+
+                        self.log("✅ 財報公布日期寫入選擇權模板完成")
+
                         # 🔥 步驟 2: 批次寫入 (實際上已在上面的方法中完成)
                         check_if_stopped()
                         current_step += 1
                         step_num = f"{current_step}/{total_steps}"
                         self.update_progress(current_step, total_steps, "[選擇權] 批次寫入 Excel")
-                        self.log(f"\n💾 步驟 {step_num}：[選擇權] 已完成批次寫入到 Excel")
+                        self.log(f"\n💾 步驟 {step_num}:[選擇權] 已完成批次寫入到 Excel")
                         self.log("✅ 選擇權數據批次處理完成")
-
-                        # 🔥 ADD 結束 ✅
 
                         # 保存選擇權檔案
                         check_if_stopped()
                         current_step += 1
                         step_num = f"{current_step}/{total_steps}"
                         self.update_progress(current_step, total_steps, "[選擇權] 保存 Excel 檔案")
-                        self.log(f"\n💾 步驟 {step_num}：[選擇權] 正在保存選擇權 Excel 檔案...")
+                        self.log(f"\n💾 步驟 {step_num}:[選擇權] 正在保存選擇權 Excel 檔案...")
 
                         output_folder = self.output_folder_var.get()
                         saved_option_files = manager.save_all_option_excel_files(output_folder)
@@ -1210,10 +1234,9 @@ class StockAnalyzerGUI:
                 except Exception as e:
                     self.log(f"⚠️ 選擇權分析過程發生錯誤: {e}")
                     if do_stock_analysis:
-                        self.log("⚠️ 股票分析已完成，將繼續完成流程")
-                        # 繼續執行，不中斷
+                        self.log("⚠️ 股票分析已完成,將繼續完成流程")
                     else:
-                        self.log("❌ 選擇權分析失敗，停止爬蟲")
+                        self.log("❌ 選擇權分析失敗,停止爬蟲")
                         raise e
 
                 self.log("🎯" + "=" * 80)
