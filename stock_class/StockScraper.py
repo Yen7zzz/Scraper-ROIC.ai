@@ -46,6 +46,7 @@ import aiohttp
 import json
 import re
 import yfinance as yf
+import schwabdev
 
 # 自定義異常類別
 class TokenExpiredException(Exception):
@@ -69,6 +70,48 @@ class StockScraper:
         self.contexts = []
         self.contexts_lock = asyncio.Lock()
         self._validate_schwab_config()
+        # 🔥 新增：Schwab Client 重用
+        self.schwab_client = None
+        self.schwab_client_lock = asyncio.Lock()  # 防止競爭條件
+
+    # 在 StockScraper 類別中，只需要修改 initialize_schwab_client 方法
+
+    def initialize_schwab_client(self):
+        """
+        初始化 Schwab Client（只執行一次）- 支援 3.0.0 .db 格式
+        """
+        if self.schwab_client is not None:
+            return
+
+        if not self.schwab_available or not self.config:
+            raise ValueError("Schwab API 配置未設定")
+
+        print("🔧 初始化 Schwab API Client...")
+
+        # 計算路徑
+        if getattr(sys, 'frozen', False):
+            base_path = os.path.dirname(sys.executable)
+        else:
+            current_file = os.path.abspath(__file__)
+            project_root = os.path.dirname(os.path.dirname(current_file))
+            base_path = os.path.join(project_root, 'schwab')
+
+        # 🔥 關鍵修正：完整的 tokens.db 檔案路徑
+        tokens_file_path = os.path.join(base_path, 'tokens.db')
+
+        print(f"📁 Token DB 路徑: {tokens_file_path}")
+        print(f"📁 檔案是否存在: {os.path.exists(tokens_file_path)}")
+
+        # 🔥 使用正確的參數：tokens_db (完整檔案路徑)
+        self.schwab_client = schwabdev.Client(
+            self.config['app_key'],
+            self.config['app_secret'],
+            callback_url="https://127.0.0.1",
+            tokens_db=tokens_file_path,  # ✅ 完整路徑到 tokens.db
+            timeout=30
+        )
+
+        print("✅ Schwab Client 已初始化")
 
     def _validate_schwab_config(self):
         """驗證 Schwab API 配置是否完整"""
@@ -211,6 +254,17 @@ class StockScraper:
                 finally:
                     self.playwright = None
 
+            # 🔥 Step 3.5: 清理 Schwab Client（新增）
+            if self.schwab_client:
+                print("🧹 清理 Schwab Client...")
+                try:
+                    # Schwab Client 沒有異步清理方法，直接設為 None
+                    self.schwab_client = None
+                    print("✅ Schwab Client 已清理")
+                except Exception as e:
+                    cleanup_errors.append(f"Schwab Client: {e}")
+                    print(f"⚠️ Schwab Client 清理錯誤: {e}")
+
             # 🔥 Step 4: 等待後台任務完成（增加等待時間）
             await asyncio.sleep(0.5)
 
@@ -238,6 +292,7 @@ class StockScraper:
             # 即使發生錯誤，也要確保變數被重置
             self.browser = None
             self.playwright = None
+            self.schwab_client = None  # 🔥 新增
             if hasattr(self, 'contexts'):
                 self.contexts.clear()
 
@@ -2644,71 +2699,20 @@ class StockScraper:
                 return {stock: {"error": str(e)}}
 
     def _get_option_chain_sync(self, stock):
-        """同步獲取選擇權鏈數據 - 使用傳入的配置，包含 Token 錯誤處理"""
-        import schwabdev
-        import os
-        import sys
-        import json
+        """同步獲取選擇權鏈數據 - 使用重用的 Client"""
 
-        # 檢查配置是否可用
-        if not self.schwab_available or not self.config:
-            raise ValueError(
-                "Schwab API 配置未設定或不完整。\n"
-                "請確認已完成 OAuth 認證流程。"
-            )
-
-        # 從配置中讀取憑證
-        app_key = self.config.get('app_key')
-        app_secret = self.config.get('app_secret')
-        callback_url = self.config.get('callback_url', 'https://127.0.0.1')
-
-        # 驗證必要參數
-        if not app_key or not app_secret:
-            raise ValueError(
-                "Schwab API 憑證缺失。\n"
-                f"app_key: {'已設定' if app_key else '❌ 未設定'}\n"
-                f"app_secret: {'已設定' if app_secret else '❌ 未設定'}"
-            )
-
-        # 計算 tokens.json 的完整路徑
-        if getattr(sys, 'frozen', False):
-            # 打包後：直接在 exe 所在目錄找 tokens.json
-            base_path = os.path.dirname(sys.executable)
-            tokens_file_path = os.path.join(base_path, 'tokens.json')  # 改這裡！
-        else:
-            # 開發環境：在 schwab 資料夾中
-            current_file = os.path.abspath(__file__)
-            project_root = os.path.dirname(os.path.dirname(current_file))
-            tokens_folder = os.path.join(project_root, 'schwab')
-            tokens_file_path = os.path.join(tokens_folder, 'tokens.json')
-
-        print(f"🔐 使用 Schwab API 獲取 {stock} 的選擇權數據...")
-        print(f"📁 Token 位置: {tokens_file_path}")
-
-        # 檢查 tokens.json 是否存在
-        if not os.path.exists(tokens_file_path):
-            raise FileNotFoundError(
-                f"找不到 Token 檔案: {tokens_file_path}\n"
-                "請先完成 OAuth 認證流程。"
-            )
+        # 🔥 確保 Client 已初始化
+        if self.schwab_client is None:
+            self.initialize_schwab_client()
 
         try:
-            # 創建客戶端
-            client = schwabdev.Client(
-                app_key,
-                app_secret,
-                callback_url,
-                tokens_file=tokens_file_path
-            )
-
-            # 獲取選擇權數據
-            response = client.option_chains(stock)
+            # 🔥 使用重用的 Client
+            response = self.schwab_client.option_chains(stock)
 
             # 嘗試解析 JSON
             try:
                 data = response.json()
             except json.JSONDecodeError as e:
-                # 如果無法解析 JSON，可能是錯誤訊息
                 response_text = response.text if hasattr(response, 'text') else str(response)
                 raise ValueError(f"無法解析 API 回應: {response_text[:200]}")
 
@@ -2718,14 +2722,11 @@ class StockScraper:
                     error_type = data.get('error', '')
                     error_desc = data.get('error_description', '')
 
-                    # 檢查是否為 Token 認證錯誤
                     if 'refresh_token_authentication_error' in error_desc or \
                             'refresh_token_authentication_error' in error_type or \
                             'unsupported_token_type' in error_type:
 
                         print(f"❌ Token 認證失敗: {error_desc}")
-
-                        # 拋出自定義異常
                         raise TokenExpiredException(
                             f"Refresh Token 已失效或過期\n"
                             f"錯誤類型: {error_type}\n"
@@ -2733,29 +2734,33 @@ class StockScraper:
                             f"請重新啟動程式完成認證流程。"
                         )
                     else:
-                        # 其他 API 錯誤
                         raise ValueError(f"API 錯誤: {error_type} - {error_desc}")
 
             return data
 
         except TokenExpiredException:
-            # 重新拋出 Token 異常
             raise
 
         except Exception as e:
-            # 檢查錯誤訊息中是否包含 Token 相關關鍵字
             error_str = str(e).lower()
-            if 'refresh_token' in error_str or 'token' in error_str and 'authentication' in error_str:
+            if 'refresh_token' in error_str or ('token' in error_str and 'authentication' in error_str):
                 raise TokenExpiredException(
                     f"Token 認證失敗: {str(e)}\n\n"
                     f"請重新啟動程式完成認證流程。"
                 )
             else:
-                # 其他錯誤直接拋出
                 raise e
 
     async def run_option_chains(self):
-        """批次執行選擇權鏈抓取 - 使用 Schwab API"""
+        """批次執行選擇權鏈抓取 - 使用 Schwab API（優化版）"""
+
+        # 🔥 初始化 Client（只執行一次）
+        try:
+            self.initialize_schwab_client()
+        except Exception as e:
+            print(f"❌ Schwab Client 初始化失敗: {e}")
+            return []
+
         semaphore = asyncio.Semaphore(self.max_concurrent)
 
         try:
