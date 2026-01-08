@@ -1,88 +1,87 @@
 """
-完整的配置管理模組 - 支援 Schwab API 3.0.0 的 .db 格式
-使用 monkey patch 替換 input() 函數
+完整的配置管理模組 - 基於實際的 schwabdev 3.0.0 (PyPI 版本)
+
+實際資料庫結構（已確認）：
+表名：schwabdev
+欄位：
+  - access_token_issued (TEXT)
+  - refresh_token_issued (TEXT)
+  - access_token (TEXT)
+  - refresh_token (TEXT)
+  - id_token (TEXT)
+  - expires_in (INTEGER)
+  - token_type (TEXT)
+  - scope (TEXT)
 """
-import webbrowser
-import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
+import sqlite3
 import os
 import sys
 import webbrowser
+import tkinter as tk
+from tkinter import ttk, messagebox, scrolledtext
 import schwabdev
 import threading
 import queue
 import builtins
-import json
+from datetime import datetime, timezone, timedelta
 
 
 class ConfigManager:
     """配置管理器 - 處理 API 憑證的存儲和讀取"""
 
     def __init__(self):
-        # 🔥 修正：確定基礎路徑（打包後和開發環境統一處理）
         if getattr(sys, 'frozen', False):
-            # 打包後：exe 所在目錄
             self.base_path = os.path.dirname(sys.executable)
-            print(f"🔥 [打包模式] Base path: {self.base_path}")
         else:
-            # 開發環境：專案根目錄（schwab 資料夾的上一層）
             current_file = os.path.abspath(__file__)
-            self.base_path = os.path.dirname(current_file)  # schwab 資料夾
-            print(f"🔥 [開發模式] Base path: {self.base_path}")
+            self.base_path = os.path.dirname(current_file)
 
         self.env_path = os.path.join(self.base_path, '.env')
+        self.tokens_path = os.path.join(self.base_path, 'tokens.db')
 
-        # 🔥 關鍵修改：改用 .db 檔案（Schwab 3.0.0 格式）
-        self.tokens_path = os.path.join(self.base_path, 'tokens.db')  # ✅ 改成 .db
-
-        # 🔥 新增：Token 驗證快取
+        # Token 驗證快取
         self._last_validation_time = None
         self._last_validation_result = None
 
-        # 🔥 新增：啟動時顯示路徑資訊
         print(f"📁 .env 路徑: {self.env_path}")
-        print(f"📁 tokens.db 路徑: {self.tokens_path}")  # ✅ 顯示 .db
+        print(f"📁 tokens.db 路徑: {self.tokens_path}")
         print(f"📁 .env 存在: {os.path.exists(self.env_path)}")
-        print(f"📁 tokens.db 存在: {os.path.exists(self.tokens_path)}")  # ✅ 檢查 .db
+        print(f"📁 tokens.db 存在: {os.path.exists(self.tokens_path)}")
 
-    # 🔥 新增方法 1：快速本地檢查
     def is_token_valid_fast(self, buffer_hours=24):
         """
-        快速檢查 Token 是否有效（讀取 .db 檔案中的時間戳）
+        快速檢查 Token 是否有效
+
+        基於實際結構：
+        SELECT refresh_token_issued FROM schwabdev
 
         Returns:
             (is_valid, remaining_hours, expiry_time, status)
-            status: 'valid' | 'expiring_soon' | 'expired' | 'missing'
         """
-        from datetime import datetime, timezone, timedelta
-        import sqlite3
-
         try:
             if not os.path.exists(self.tokens_path):
                 return False, 0, None, 'missing'
 
-            # 🔥 關鍵修改：讀取 SQLite DB 而非 JSON
             conn = sqlite3.connect(self.tokens_path)
             cursor = conn.cursor()
 
-            # 🔥 讀取 refresh_token 的發行時間
-            # 假設表結構為 tokens(token_type, token_value, issued_at)
-            cursor.execute(
-                "SELECT issued_at FROM tokens WHERE token_type = 'refresh_token'"
-            )
+            # 🔥 正確查詢：基於實際資料庫結構
+            cursor.execute("SELECT refresh_token_issued FROM schwabdev LIMIT 1")
             result = cursor.fetchone()
             conn.close()
 
             if not result:
+                print("⚠️ 找不到 token 記錄")
                 return False, 0, None, 'missing'
 
-            refresh_issued = result[0]
-
-            # 解析時間（假設存儲為 ISO 格式字串）
-            issued_time = datetime.fromisoformat(refresh_issued.replace('Z', '+00:00'))
+            # refresh_token_issued 是 ISO 格式字串
+            issued_time_str = result[0]
+            issued_time = datetime.fromisoformat(issued_time_str)
 
             # Schwab Refresh Token 有效期是 7 天
             expiry_time = issued_time + timedelta(days=7)
+
+            # 計算剩餘時間
             current_time = datetime.now(timezone.utc)
             remaining_seconds = (expiry_time - current_time).total_seconds()
             remaining_hours = remaining_seconds / 3600
@@ -98,33 +97,27 @@ class ConfigManager:
                 status = 'valid'
                 is_valid = True
 
+            print(f"✓ Token 狀態: {status}（剩餘 {remaining_hours / 24:.1f} 天）")
             return is_valid, remaining_hours, expiry_time, status
 
         except Exception as e:
             print(f"⚠️ 檢查 Token 時發生錯誤: {e}")
+            import traceback
+            traceback.print_exc()
             return False, 0, None, 'error'
 
-    # 🔥 新增方法 2：智慧判斷是否需要 API 驗證
     def should_validate_with_api(self):
-        """
-        智慧判斷是否需要調用 API 驗證
-
-        Returns:
-            (should_validate, cached_result)
-        """
-        from datetime import datetime
-
-        # 檢查是否在快取時間內（1小時）
+        """智慧判斷是否需要調用 API 驗證"""
+        # 檢查快取（1小時內）
         if self._last_validation_time:
             time_since_last = (datetime.now() - self._last_validation_time).total_seconds()
-            if time_since_last < 3600:  # 1 小時內
+            if time_since_last < 3600:
                 print(f"✓ 使用快取的驗證結果（{int(time_since_last / 60)} 分鐘前驗證）")
                 return False, self._last_validation_result
 
         # 快速檢查 Token 狀態
         is_valid, remaining_hours, _, status = self.is_token_valid_fast(buffer_hours=24)
 
-        # 決策邏輯
         if status == 'expired' or status == 'missing':
             print(f"⚠️ Token {status}，需要重新認證")
             return True, None
@@ -137,14 +130,11 @@ class ConfigManager:
             print(f"✓ Token 狀態良好（剩餘 {remaining_hours / 24:.1f} 天），跳過 API 驗證")
             return False, True
 
-        # 預設：執行驗證
         print(f"🔍 Token 剩餘 {remaining_hours / 24:.1f} 天，執行 API 驗證確認")
         return True, None
 
-    # 🔥 新增方法 3：更新快取
     def update_validation_cache(self, result):
         """更新驗證快取"""
-        from datetime import datetime
         self._last_validation_time = datetime.now()
         self._last_validation_result = result
 
@@ -181,14 +171,9 @@ class ConfigManager:
                         config[key] = value
 
             print(f"✅ 成功載入配置，包含 {len(config)} 個設定")
-            print(f"   - app_key: {'已設定' if 'app_key' in config else '❌ 缺失'}")
-            print(f"   - app_secret: {'已設定' if 'app_secret' in config else '❌ 缺失'}")
-
             return config if config else None
         except Exception as e:
             print(f"❌ 讀取配置失敗: {e}")
-            import traceback
-            traceback.print_exc()
             return None
 
     def save_config(self, config_data):
@@ -202,7 +187,6 @@ class ConfigManager:
                 f.write(f'app_secret = "{config_data["app_secret"]}"\n')
                 f.write(f'callback_url = "https://127.0.0.1"\n')
 
-            # 驗證檔案是否真的被寫入
             if os.path.exists(self.env_path):
                 file_size = os.path.getsize(self.env_path)
                 print(f"✅ 配置已保存，檔案大小: {file_size} bytes")
@@ -213,76 +197,19 @@ class ConfigManager:
 
         except Exception as e:
             print(f"❌ 保存配置失敗: {e}")
-            import traceback
-            traceback.print_exc()
             return False
 
     def has_valid_token(self):
-        """檢查是否有有效的 token（.db 格式）"""
+        """檢查是否有有效的 token"""
         exists = os.path.exists(self.tokens_path)
-        print(f"🔍 檢查 tokens.db 是否存在: {exists}")  # ✅ 改成 .db
+        print(f"🔍 檢查 tokens.db 是否存在: {exists}")
         if exists:
             file_size = os.path.getsize(self.tokens_path)
             print(f"   檔案大小: {file_size} bytes")
         return exists
 
-    def is_token_valid(self, buffer_days=1):
-        """檢查 Refresh Token 是否仍然有效（從 .db 讀取）"""
-        from datetime import datetime, timezone, timedelta
-        import sqlite3
-
-        try:
-            if not os.path.exists(self.tokens_path):
-                print("❌ tokens.db 不存在")
-                return False, 0, None
-
-            # 🔥 關鍵修改：從 SQLite 讀取
-            conn = sqlite3.connect(self.tokens_path)
-            cursor = conn.cursor()
-
-            cursor.execute(
-                "SELECT issued_at FROM tokens WHERE token_type = 'refresh_token'"
-            )
-            result = cursor.fetchone()
-            conn.close()
-
-            if not result:
-                print("❌ 找不到 refresh_token 記錄")
-                return False, 0, None
-
-            refresh_issued = result[0]
-
-            # 解析 ISO 格式時間
-            issued_time = datetime.fromisoformat(refresh_issued.replace('Z', '+00:00'))
-
-            # Schwab Refresh Token 有效期是 7 天
-            expiry_time = issued_time + timedelta(days=7)
-
-            # 計算剩餘時間
-            current_time = datetime.now(timezone.utc)
-            remaining_seconds = (expiry_time - current_time).total_seconds()
-            remaining_hours = remaining_seconds / 3600
-            remaining_days = remaining_seconds / 86400
-
-            # 判斷是否有效（剩餘時間大於緩衝天數）
-            is_valid = remaining_days > buffer_days
-
-            print(f"📅 Token 狀態:")
-            print(f"   發行時間: {issued_time}")
-            print(f"   過期時間: {expiry_time}")
-            print(f"   剩餘天數: {remaining_days:.1f}")
-            print(f"   是否有效: {is_valid}")
-
-            return is_valid, remaining_hours, expiry_time
-
-        except Exception as e:
-            print(f"❌ 檢查 Token 時發生錯誤: {e}")
-            import traceback
-            traceback.print_exc()
-            return False, 0, None
-
     def delete_token(self):
-        """安全刪除 Token 檔案（.db）"""
+        """安全刪除 Token 檔案"""
         try:
             if os.path.exists(self.tokens_path):
                 os.remove(self.tokens_path)
@@ -296,30 +223,186 @@ class ConfigManager:
             return False
 
     def get_token_expiry_info(self):
-        """
-        獲取 Token 過期資訊的詳細字串
-
-        返回:
-            str: 格式化的過期資訊
-        """
-        is_valid, remaining_hours, expiry_time = self.is_token_valid(buffer_days=0)
+        """獲取 Token 過期資訊"""
+        is_valid, remaining_hours, expiry_time, status = self.is_token_valid_fast(buffer_hours=0)
 
         if expiry_time is None:
             return "Token 不存在或無法讀取"
 
-        from datetime import datetime
-
         if remaining_hours < 0:
-            # 已過期
             hours_ago = abs(remaining_hours)
             return f"Token 已過期（{hours_ago:.1f} 小時前過期）"
         elif remaining_hours < 24:
-            # 不到 1 天
             return f"Token 將在 {remaining_hours:.1f} 小時後過期\n過期時間：{expiry_time.strftime('%Y-%m-%d %H:%M:%S')}"
         else:
-            # 超過 1 天
             days = remaining_hours / 24
             return f"Token 將在 {days:.1f} 天後過期\n過期時間：{expiry_time.strftime('%Y-%m-%d %H:%M:%S')}"
+
+
+def verify_token_db_structure(tokens_path):
+    """
+    驗證 Token DB 是否有正確的表格結構
+
+    基於實際的 schwabdev 3.0.0 (PyPI 版本)
+    表名：schwabdev
+    欄位：access_token_issued, refresh_token_issued, access_token, refresh_token,
+          id_token, expires_in, token_type, scope
+
+    Returns:
+        bool: True 表示結構正確，False 表示需要重建
+    """
+    try:
+        if not os.path.exists(tokens_path):
+            print("⚠️ tokens.db 檔案不存在")
+            return False
+
+        # 檢查檔案大小
+        file_size = os.path.getsize(tokens_path)
+        if file_size == 0:
+            print("⚠️ tokens.db 檔案大小為 0")
+            return False
+
+        print(f"✓ tokens.db 檔案存在，大小: {file_size} bytes")
+
+        conn = sqlite3.connect(tokens_path)
+        cursor = conn.cursor()
+
+        # 步驟 1: 檢查 schwabdev 表格是否存在
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='schwabdev'"
+        )
+        table_exists = cursor.fetchone() is not None
+
+        if not table_exists:
+            print("⚠️ schwabdev 表格不存在")
+            conn.close()
+            return False
+
+        print("✓ schwabdev 表格存在")
+
+        # 步驟 2: 檢查表格結構
+        cursor.execute("PRAGMA table_info(schwabdev)")
+        columns = cursor.fetchall()
+        column_names = [col[1] for col in columns]
+        print(f"✓ schwabdev 欄位: {column_names}")
+
+        # 步驟 3: 驗證必要欄位
+        required_columns = ['access_token', 'refresh_token', 'refresh_token_issued']
+        missing_columns = [col for col in required_columns if col not in column_names]
+
+        if missing_columns:
+            print(f"⚠️ 缺少必要欄位: {missing_columns}")
+            conn.close()
+            return False
+
+        # 步驟 4: 檢查是否有資料
+        cursor.execute("SELECT COUNT(*) FROM schwabdev")
+        count = cursor.fetchone()[0]
+
+        if count == 0:
+            print("⚠️ schwabdev 表格是空的")
+            conn.close()
+            return False
+
+        print(f"✓ 找到 {count} 筆記錄")
+
+        # 步驟 5: 檢查 refresh_token 的值是否為空
+        cursor.execute("SELECT refresh_token, refresh_token_issued FROM schwabdev LIMIT 1")
+        result = cursor.fetchone()
+
+        if not result[0] or result[0].strip() == '':
+            print("⚠️ refresh_token 的值是空的")
+            conn.close()
+            return False
+
+        print(f"✓ refresh_token 有效（長度: {len(result[0])}）")
+
+        # 步驟 6: 檢查發行時間
+        issued_time_str = result[1]
+        issued_time = datetime.fromisoformat(issued_time_str)
+        expiry_time = issued_time + timedelta(days=7)
+
+        print(f"✓ Token 發行時間: {issued_time}")
+        print(f"✓ Token 過期時間: {expiry_time}")
+
+        conn.close()
+        print("✅ Token DB 結構驗證通過！")
+        return True
+
+    except Exception as e:
+        print(f"❌ 檢查 Token DB 結構時發生錯誤: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def debug_token_db(tokens_path):
+    """完整診斷 Token DB（調試用）"""
+    print("\n" + "="*60)
+    print("🔍 Token DB 完整診斷")
+    print("="*60)
+
+    try:
+        if not os.path.exists(tokens_path):
+            print("❌ tokens.db 不存在")
+            return
+
+        file_size = os.path.getsize(tokens_path)
+        print(f"📁 檔案路徑: {tokens_path}")
+        print(f"📁 檔案大小: {file_size} bytes")
+
+        conn = sqlite3.connect(tokens_path)
+        cursor = conn.cursor()
+
+        # 列出所有表格
+        print("\n📊 資料庫表格:")
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = cursor.fetchall()
+
+        for table in tables:
+            table_name = table[0]
+            print(f"\n  表格: {table_name}")
+
+            # 顯示表格結構
+            cursor.execute(f"PRAGMA table_info({table_name})")
+            columns = cursor.fetchall()
+            print(f"  欄位:")
+            for col in columns:
+                print(f"    - {col[1]} ({col[2]})")
+
+            # 顯示記錄數
+            cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+            count = cursor.fetchone()[0]
+            print(f"  記錄數: {count}")
+
+            # 顯示所有記錄
+            cursor.execute(f"SELECT * FROM {table_name}")
+            rows = cursor.fetchall()
+
+            if rows:
+                print(f"  記錄內容:")
+                for i, row in enumerate(rows, 1):
+                    print(f"\n    記錄 {i}:")
+                    for j, col in enumerate(columns):
+                        col_name = col[1]
+                        col_value = row[j]
+
+                        # 特殊處理
+                        if col_name == 'value' and isinstance(col_value, str):
+                            display_value = f"{col_value[:20]}...{col_value[-10:]}" if len(col_value) > 30 else col_value
+                        elif col_name in ['creation', 'expiration']:
+                            display_value = f"{col_value} ({datetime.fromtimestamp(col_value, tz=timezone.utc)})"
+                        else:
+                            display_value = col_value
+
+                        print(f"      {col_name}: {display_value}")
+
+        conn.close()
+        print("\n" + "="*60)
+
+    except Exception as e:
+        print(f"❌ 診斷過程發生錯誤: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 class OAuthSetupWindow:
@@ -1003,59 +1086,23 @@ def test_schwab_token(config, tokens_path):
         return False
 
 
-def verify_token_db_structure(tokens_path):
-    """
-    驗證 Token DB 是否有正確的表格結構
-
-    Returns:
-        bool: True 表示結構正確，False 表示需要重建
-    """
-    import sqlite3
-
-    try:
-        if not os.path.exists(tokens_path):
-            return False
-
-        conn = sqlite3.connect(tokens_path)
-        cursor = conn.cursor()
-
-        # 檢查 tokens 表格是否存在
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='tokens'"
-        )
-        table_exists = cursor.fetchone() is not None
-
-        if not table_exists:
-            print("⚠️ tokens 表格不存在")
-            conn.close()
-            return False
-
-        # 檢查是否有 refresh_token 記錄
-        cursor.execute(
-            "SELECT COUNT(*) FROM tokens WHERE token_type = 'refresh_token'"
-        )
-        token_count = cursor.fetchone()[0]
-
-        conn.close()
-
-        if token_count == 0:
-            print("⚠️ 找不到 refresh_token 記錄")
-            return False
-
-        print(f"✓ Token DB 結構正確，包含 {token_count} 筆 refresh_token")
-        return True
-
-    except Exception as e:
-        print(f"⚠️ 檢查 Token DB 結構時發生錯誤: {e}")
-        return False
-
-# 測試用
+# 測試程式碼
 if __name__ == "__main__":
-    config, should_continue = check_and_setup_config()
+    cm = ConfigManager()
 
-    if should_continue:
-        print("\n✅ 配置完成！")
-        print(f"App Key: {config['app_key'][:10]}...")
-        print("系統已就緒，可以開始使用！")
+    print("\n" + "=" * 60)
+    print("測試 1: 驗證 Token DB 結構")
+    print("=" * 60)
+    result = verify_token_db_structure(cm.tokens_path)
+    print(f"\n結果: {'✅ 通過' if result else '❌ 失敗'}")
+
+    print("\n" + "=" * 60)
+    print("測試 2: 快速檢查 Token 有效性")
+    print("=" * 60)
+    is_valid, hours, expiry, status = cm.is_token_valid_fast()
+    print(f"有效: {is_valid}")
+    print(f"狀態: {status}")
+    if hours > 0:
+        print(f"剩餘時間: {hours / 24:.1f} 天")
     else:
-        print("程式已退出")
+        print(f"已過期: {abs(hours) / 24:.1f} 天前")
