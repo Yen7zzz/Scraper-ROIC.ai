@@ -127,8 +127,8 @@ class ConfigManager:
             return True, None
 
         if remaining_hours > 72:  # > 3 天
-            print(f"✓ Token 狀態良好（剩餘 {remaining_hours / 24:.1f} 天），跳過 API 驗證")
-            return False, True
+            print(f"✓ Token 時間充足（剩餘 {remaining_hours / 24:.1f} 天），但仍需執行 API 驗證確認")
+            return True, None  # 👈 改成 True，強制執行 API 驗證
 
         print(f"🔍 Token 剩餘 {remaining_hours / 24:.1f} 天，執行 API 驗證確認")
         return True, None
@@ -1006,9 +1006,7 @@ def check_and_setup_config():
     else:
         print("❌ Token 驗證失敗")
 
-        temp_root = tk.Tk()
-        temp_root.withdraw()
-
+        print("🔄 準備顯示對話框...")
         response = messagebox.askyesno(
             "❌ Token 認證失敗",
             "Schwab 伺服器拒絕了你的 Token。\n\n"
@@ -1019,8 +1017,7 @@ def check_and_setup_config():
             "是否立即重新認證？",
             icon='error'
         )
-
-        temp_root.destroy()
+        print(f"✓ 用戶選擇: {'是' if response else '否'}")
 
         if response:
             config_manager.delete_token()

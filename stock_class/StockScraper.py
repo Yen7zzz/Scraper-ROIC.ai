@@ -62,6 +62,11 @@ class StockScraper:
         self.stocks = stocks.get('final_stocks')
         self.us_stocks = stocks.get('us_stocks')
         self.non_us_stocks = stocks.get('non_us_stocks')
+
+        # 🔥 新增：coe_stocks 和 adr_stocks
+        self.coe_stocks = stocks.get('coe_stocks', [])
+        self.adr_stocks = stocks.get('adr_stocks', [])
+
         self.config = config
         self.headless = headless
         self.max_concurrent = max_concurrent
@@ -70,18 +75,35 @@ class StockScraper:
         self.contexts = []
         self.contexts_lock = asyncio.Lock()
         self._validate_schwab_config()
-        # 🔥 新增：Schwab Client 重用
+
+        # 🔥 關鍵修改：Schwab Client 重用
         self.schwab_client = None
-        self.schwab_client_lock = asyncio.Lock()  # 防止競爭條件
+        self.schwab_client_lock = asyncio.Lock()
+
+        # 🔥 新增：交易所資訊（供 TradingView 使用）
+        self.stock_exchanges = {}  # {stock: 'NYSE'} - 由 StockManager 設定
+
+        # 🔥 新增：立即初始化 Schwab Client（用於驗證階段）
+        if self.schwab_available:
+            try:
+                self.initialize_schwab_client()
+                print("✅ Schwab Client 已在初始化階段準備就緒")
+            except Exception as e:
+                print(f"⚠️ Schwab Client 初始化失敗: {e}")
+                print("   驗證功能將無法使用")
+                self.schwab_available = False
 
     # 在 StockScraper 類別中，只需要修改 initialize_schwab_client 方法
 
     def initialize_schwab_client(self):
         """
         初始化 Schwab Client（只執行一次）- 支援 3.0.0 .db 格式
+
+        ⚠️ 注意：此方法現在會在 __init__ 時立即執行，
+                 確保驗證階段可以使用 schwab_client
         """
         if self.schwab_client is not None:
-            return
+            return  # 已初始化，跳過
 
         if not self.schwab_available or not self.config:
             raise ValueError("Schwab API 配置未設定")
@@ -107,11 +129,11 @@ class StockScraper:
             self.config['app_key'],
             self.config['app_secret'],
             callback_url="https://127.0.0.1",
-            tokens_db=tokens_file_path,  # ✅ 完整路徑到 tokens.db
+            tokens_db=tokens_file_path,
             timeout=30
         )
 
-        print("✅ Schwab Client 已初始化")
+        print("✅ Schwab Client 已初始化（可用於驗證和選擇權鏈）")
 
     def _validate_schwab_config(self):
         """驗證 Schwab API 配置是否完整"""
@@ -1466,15 +1488,17 @@ class StockScraper:
                 return {stock: None}  # 如果出錯返回None
 
     async def get_TradingView_html(self, stock, page, retries=3):
-        """抓取特定股票的trading-view資料並處理網址證券交易所問題 - 強化版"""
-        url_stock_exchange = yf.Ticker(stock).info.get('fullExchangeName', None)
-        if url_stock_exchange in ['NasdaqGS', 'NasdaqGM', 'NasdaqCM']:
-            url_stock_exchange = 'NASDAQ'
+        """抓取特定股票的trading-view資料 - 使用 Schwab API 的 exchangeName"""
+
+        # 🔥 移除 yfinance，改用 stock_exchanges
+        exchange_name = self.stock_exchanges.get(stock, 'NYSE')  # 預設 NYSE
 
         if '-' in stock:
             stock = ''.join(['.' if char == '-' else char for char in stock])
 
-        URL = f'https://www.tradingview.com/symbols/{url_stock_exchange}-{stock}/financials-earnings/?earnings-period=FY&revenues-period=FY'
+        # 🔥 直接使用 exchangeName，不需要再做對應
+        URL = f'https://www.tradingview.com/symbols/{exchange_name}-{stock}/financials-earnings/?earnings-period=FY&revenues-period=FY'
+
         attempt = 0
 
         while attempt < retries:
@@ -1696,7 +1720,7 @@ class StockScraper:
             await self.cleanup()
 
     async def _open_all_tradingview_pages(self):
-        """打開所有股票的 TradingView 頁面並等待 CAPTCHA 通過（無時間限制）"""
+        """打開所有股票的 TradingView 頁面 - 使用 Schwab API 的 exchangeName"""
         pages_and_contexts = []
 
         for i, stock in enumerate(self.stocks):
@@ -1743,20 +1767,20 @@ class StockScraper:
 
                 page = await context.new_page()
 
-                # 構建 URL
-                url_stock_exchange = yf.Ticker(stock).info.get('fullExchangeName', None)
-                if url_stock_exchange in ['NasdaqGS', 'NasdaqGM', 'NasdaqCM']:
-                    url_stock_exchange = 'NASDAQ'
+                # 🔥 移除 yfinance，改用 stock_exchanges
+                exchange_name = self.stock_exchanges.get(stock, 'NYSE')  # 預設 NYSE
 
                 stock_symbol = ''.join(['.' if char == '-' else char for char in stock]) if '-' in stock else stock
-                URL = f'https://www.tradingview.com/symbols/{url_stock_exchange}-{stock_symbol}/financials-earnings/?earnings-period=FY&revenues-period=FY'
+
+                # 🔥 直接使用 exchangeName
+                URL = f'https://www.tradingview.com/symbols/{exchange_name}-{stock_symbol}/financials-earnings/?earnings-period=FY&revenues-period=FY'
 
                 # 訪問頁面
                 await asyncio.sleep(random.uniform(2, 4))
                 await page.goto(URL, wait_until='domcontentloaded', timeout=60000)
                 await asyncio.sleep(random.uniform(2, 3))
 
-                # 🔥 檢查 CAPTCHA（無限等待）- 重用 Beta 的方法
+                # 🔥 檢查 CAPTCHA（無限等待）
                 await self._wait_for_captcha_resolution(stock, page)
 
                 # 保存頁面和 context
@@ -2005,13 +2029,13 @@ class StockScraper:
 
                 page = await context.new_page()
 
-                # 構建 URL
-                url_stock_exchange = yf.Ticker(stock).info.get('fullExchangeName', None)
-                if url_stock_exchange in ['NasdaqGS', 'NasdaqGM', 'NasdaqCM']:
-                    url_stock_exchange = 'NASDAQ'
+                # 🔥 移除 yfinance，改用 stock_exchanges
+                exchange_name = self.stock_exchanges.get(stock, 'NYSE')  # 預設 NYSE
 
                 stock_symbol = ''.join(['.' if char == '-' else char for char in stock]) if '-' in stock else stock
-                URL = f'https://tw.tradingview.com/symbols/{url_stock_exchange}-{stock_symbol}/'
+
+                # 🔥 直接使用 exchangeName
+                URL = f'https://tw.tradingview.com/symbols/{exchange_name}-{stock_symbol}/'
 
                 # 訪問頁面
                 await asyncio.sleep(random.uniform(2, 4))

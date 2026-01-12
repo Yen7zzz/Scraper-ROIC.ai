@@ -890,9 +890,15 @@ class StockAnalyzerGUI:
                 self.is_running = False
 
     async def async_analysis(self, stocks):
-        """異步執行分析 - 支援雙模板選擇，並確保資源清理"""
+        """
+        異步執行分析 - 改進版
 
-        # 🔥 初始化資源引用
+        🔥 改進重點：
+        1. 所有股票都會執行完整流程（美國 + 非美國）
+        2. 只在 Financial 和 Ratios 步驟跳過非美國公司
+        3. 簡潔清晰的日誌訊息
+        """
+
         scraper = None
         processor = None
         manager = None
@@ -901,28 +907,6 @@ class StockAnalyzerGUI:
             # 獲取選擇的模板
             do_stock_analysis = self.stock_analysis_var.get()
             do_option_analysis = self.option_analysis_var.get()
-
-            # 構建模板說明
-            templates_info = []
-            if do_stock_analysis:
-                templates_info.append("股票分析")
-            if do_option_analysis:
-                templates_info.append("選擇權分析")
-            templates_str = " + ".join(templates_info)
-
-            self.log("🎯" + "=" * 80)
-            self.log("🚀 股票爬蟲系統啟動")
-            self.log(f"📊 輸入股票：{', '.join(stocks)}")
-            self.log(f"📢 輸入數量：{len(stocks)} 支")
-            self.log(f"📋 分析模板：{templates_str}")
-            self.log("🎯" + "=" * 80)
-
-            def check_if_stopped():
-                if not self.is_running:
-                    self.log("🛑 檢測到停止信號，正在中止操作...")
-                    raise asyncio.CancelledError("使用者請求停止")
-
-            start_time = time.time()
 
             # 計算總步驟數
             total_steps = 0
@@ -934,88 +918,101 @@ class StockAnalyzerGUI:
                 total_steps = 6
 
             current_step = 0
+            start_time = time.time()
 
-            # ===== 驗證階段 =====
-            validator = StockValidator(request_delay=1.5)
-            valid_stocks = []
-            invalid_stocks = []
-            us_stocks = []
-            non_us_stocks = []
+            # ===== 啟動訊息 =====
+            self.log("🎯" + "=" * 80)
+            self.log("🚀 股票爬蟲系統啟動")
+            self.log(f"📊 輸入股票：{', '.join(stocks)}")
 
-            # 如果選擇了股票分析，執行完整驗證（含國籍檢查）
+            templates_info = []
             if do_stock_analysis:
-                check_if_stopped()
-                current_step += 1
-                self.update_progress(current_step, total_steps, "驗證股票代碼有效性")
-                self.log(f"\n🔍 步驟 {current_step}/{total_steps}：正在驗證股票代碼...")
-
-                valid_stocks, invalid_stocks = await validator.validate_stocks_async(
-                    stocks, log_callback=self.log
-                )
-
-                if invalid_stocks:
-                    self.log("\n⚠️ 發現無效股票代碼:")
-                    for invalid_stock in invalid_stocks:
-                        self.log(f"   ❌ {invalid_stock}")
-
-                if not valid_stocks:
-                    self.log("❌ 沒有找到任何有效的股票代碼，停止爬蟲")
-                    self.update_status("爬蟲失敗：無有效股票代碼")
-                    return
-
-                self.log(f"\n✅ 有效股票代碼：{', '.join(valid_stocks)}")
-
-                # 國籍檢查
-                check_if_stopped()
-                current_step += 1
-                self.update_progress(current_step, total_steps, "檢查股票國籍")
-                self.log(f"\n🌍 步驟 {current_step}/{total_steps}：正在檢查股票國籍...")
-
-                us_stocks, non_us_stocks = await validator.check_stocks_nationality_async(
-                    valid_stocks, log_callback=self.log
-                )
-
-                if non_us_stocks:
-                    self.log("\n📋 國籍檢查摘要：")
-                    self.log(f"   🇺🇸 美國股票 ({len(us_stocks)} 支)：{', '.join(us_stocks)}")
-                    self.log(f"   🌍 非美國股票 ({len(non_us_stocks)} 支)：")
-                    for stock in non_us_stocks:
-                        country = validator.get_stock_country(stock)
-                        self.log(f"      • {stock} ({country})")
-                    self.log(f"   💡 說明：非美國股票在 roic.ai 的 financial 和 ratios 需付費，將自動跳過")
-
-            # 如果只選擇權分析，只做基本驗證
-            elif do_option_analysis:
-                check_if_stopped()
-                current_step += 1
-                self.update_progress(current_step, total_steps, "驗證股票代碼有效性")
-                self.log(f"\n🔍 步驟 {current_step}/{total_steps}：正在驗證股票代碼...")
-
-                valid_stocks, invalid_stocks = await validator.validate_stocks_async(
-                    stocks, log_callback=self.log
-                )
-
-                if invalid_stocks:
-                    self.log("\n⚠️ 發現無效股票代碼:")
-                    for invalid_stock in invalid_stocks:
-                        self.log(f"   ❌ {invalid_stock}")
-
-                if not valid_stocks:
-                    self.log("❌ 沒有找到任何有效的股票代碼，停止爬蟲")
-                    self.update_status("爬蟲失敗：無有效股票代碼")
-                    return
-
-                self.log(f"\n✅ 有效股票代碼：{', '.join(valid_stocks)}")
-
-            self.log(f"\n🎯 最終處理清單：{', '.join(valid_stocks)}")
+                templates_info.append("股票分析")
+            if do_option_analysis:
+                templates_info.append("選擇權分析")
+            self.log(f"📋 分析模板：{' + '.join(templates_info)}")
             self.log("🎯" + "=" * 80)
 
-            # 準備股票字典
+            def check_if_stopped():
+                if not self.is_running:
+                    self.log("🛑 檢測到停止信號，正在中止操作...")
+                    raise asyncio.CancelledError("使用者請求停止")
+
+            # ===== 驗證階段 =====
+
+            # 初始化 Schwab API
+            check_if_stopped()
+            self.update_status("初始化 Schwab API")
+            self.log("\n🔧 正在初始化 Schwab API...")
+
+            temp_stocks_dict = {
+                'final_stocks': stocks,
+                'us_stocks': [],
+                'non_us_stocks': []
+            }
+
+            scraper = StockScraper(stocks=temp_stocks_dict, config=self.config, max_concurrent=3)
+            self.current_scraper = scraper
+
+            if not scraper.schwab_client:
+                self.log("❌ Schwab Client 初始化失敗")
+                return
+
+            self.log("✅ Schwab API 已就緒")
+
+            # 創建 validator
+            validator = StockValidator(
+                schwab_client=scraper.schwab_client,
+                request_delay=1.0
+            )
+
+            # 🔥 步驟 1: 驗證有效性
+            check_if_stopped()
+            current_step += 1
+            self.update_progress(current_step, total_steps, "驗證股票代碼有效性")
+            self.log(f"\n🔍 步驟 {current_step}/{total_steps}：驗證股票代碼...")
+
+            valid_stocks, invalid_stocks = await validator.validate_stocks_async(
+                stocks, log_callback=lambda msg: None  # 🔥 簡化：不顯示每個股票的驗證訊息
+            )
+
+            if invalid_stocks:
+                self.log(f"⚠️  無效股票：{', '.join(invalid_stocks)}")
+
+            if not valid_stocks:
+                self.log("❌ 沒有找到任何有效的股票代碼")
+                self.update_status("爬蟲失敗：無有效股票代碼")
+                return
+
+            self.log(f"✅ 有效股票：{', '.join(valid_stocks)}")
+
+            # 🔥 步驟 2: 分類股票（US / Non-US）
+            check_if_stopped()
+            current_step += 1
+            self.update_progress(current_step, total_steps, "分類股票（US / Non-US）")
+            self.log(f"\n🌍 步驟 {current_step}/{total_steps}：分類股票...")
+
+            us_stocks, non_us_stocks = await validator.classify_stocks_async(
+                valid_stocks, log_callback=lambda msg: None  # 🔥 簡化：不顯示每個股票的分類訊息
+            )
+
+            # 🔥 準備股票字典（包含所有有效股票）
             stocks_dict = {
-                'final_stocks': valid_stocks,
+                'final_stocks': valid_stocks,  # 🔥 關鍵：包含所有有效股票
                 'us_stocks': us_stocks,
                 'non_us_stocks': non_us_stocks
             }
+
+            # 🔥 簡潔的分類摘要
+            self.log("\n📊 股票分類結果：")
+            if us_stocks:
+                self.log(f"   🟢 美國公司：{len(us_stocks)} 支 → {', '.join(us_stocks)}")
+            if non_us_stocks:
+                self.log(f"   🔴 非美國公司：{len(non_us_stocks)} 支 → {', '.join(non_us_stocks)}")
+                self.log(f"      💡 將自動跳過 Financial 和 Ratios（roic.ai 需付費）")
+
+            self.log(f"\n🎯 將處理 {len(valid_stocks)} 支股票")
+            self.log("🎯" + "=" * 80)
 
             # ===== 股票分析階段 =====
             saved_stock_files = []
@@ -1023,120 +1020,120 @@ class StockAnalyzerGUI:
             if do_stock_analysis:
                 check_if_stopped()
                 self.log("\n【第一階段：股票分析】")
-                self.log("🎯" + "=" * 80)
+                self.log("=" * 80)
 
-                # 🔥 創建分析物件並保存引用
+                # 初始化系統
                 self.update_status("初始化股票分析系統")
-                self.log("🔧 正在初始化股票爬蟲系統...")
+                self.log("🔧 初始化爬蟲系統...")
 
                 scraper = StockScraper(stocks=stocks_dict, config=self.config, max_concurrent=3)
                 processor = StockProcess(max_concurrent=2)
                 manager = StockManager(scraper=scraper, processor=processor,
                                        stocks=stocks_dict, validator=validator, max_concurrent=15)
 
-                # 🔥 保存到實例變數（供 stop_analysis 使用）
                 self.current_scraper = scraper
                 self.current_manager = manager
 
-                self.log("✅ 股票爬蟲系統初始化完成")
+                self.log("✅ 爬蟲系統初始化完成")
 
-                # 初始化 Excel 檔案
+                # 初始化 Excel
                 check_if_stopped()
                 current_step += 1
-                step_num = f"{current_step}/{total_steps}"
-                self.update_progress(current_step, total_steps, "[股票] 初始化 Excel 檔案")
-                self.log(f"\n📄 步驟 {step_num}：[股票] 正在初始化 Excel 檔案...")
+                self.update_progress(current_step, total_steps, "[股票] 初始化 Excel")
+                self.log(f"\n📄 步驟 {current_step}/{total_steps}：初始化 Excel 檔案...")
 
                 success = await manager.initialize_excel_files()
                 if not success:
-                    self.log("❌ Excel 檔案初始化失敗，停止爬蟲")
-                    self.update_status("爬蟲失敗：Excel 初始化錯誤")
+                    self.log("❌ Excel 檔案初始化失敗")
                     return
                 self.log("✅ Excel 檔案初始化完成")
 
                 # Summary 和關鍵指標
                 check_if_stopped()
                 current_step += 1
-                step_num = f"{current_step}/{total_steps}"
-                self.update_progress(current_step, total_steps, "[股票] 抓取 Summary 和關鍵指標")
-                self.log(f"\n📊 步驟 {step_num}：[股票] 正在抓取 Summary 和關鍵指標數據...")
+                self.update_progress(current_step, total_steps, "[股票] Summary 和關鍵指標")
+                self.log(f"\n📊 步驟 {current_step}/{total_steps}：抓取 Summary 和關鍵指標...")
 
                 await manager.process_combined_summary_and_metrics()
-                self.log("✅ Summary 和關鍵指標數據處理完成")
+                self.log("✅ Summary 和關鍵指標完成")
 
-                # Financial 數據
+                # 🔥 Financial（只跑美國公司）
                 check_if_stopped()
                 current_step += 1
-                step_num = f"{current_step}/{total_steps}"
-                self.update_progress(current_step, total_steps, "[股票] 處理 Financial 數據")
-                self.log(f"\n💰 步驟 {step_num}：[股票] 正在處理 Financial 數據...")
+                self.update_progress(current_step, total_steps, "[股票] Financial")
+                self.log(f"\n💰 步驟 {current_step}/{total_steps}：處理 Financial...")
 
-                await manager.process_financial()
-                self.log("✅ Financial 數據處理完成")
+                if us_stocks:
+                    self.log(f"   抓取 {len(us_stocks)} 支美國公司的 Financial 數據")
+                    await manager.process_financial()
+                    self.log("✅ Financial 數據完成")
 
-                # Ratios 數據
+                if non_us_stocks:
+                    self.log(f"   ⏭️  跳過 {len(non_us_stocks)} 支非美國公司（roic.ai 需付費）")
+
+                # 🔥 Ratios（只跑美國公司）
                 check_if_stopped()
                 current_step += 1
-                step_num = f"{current_step}/{total_steps}"
-                self.update_progress(current_step, total_steps, "[股票] 處理 Ratios 數據")
-                self.log(f"\n📈 步驟 {step_num}：[股票] 正在處理 Ratios 數據...")
+                self.update_progress(current_step, total_steps, "[股票] Ratios")
+                self.log(f"\n📈 步驟 {current_step}/{total_steps}：處理 Ratios...")
 
-                await manager.process_ratios()
-                self.log("✅ Ratios 數據處理完成")
+                if us_stocks:
+                    self.log(f"   抓取 {len(us_stocks)} 支美國公司的 Ratios 數據")
+                    await manager.process_ratios()
+                    self.log("✅ Ratios 數據完成")
 
-                # 其他數據
+                if non_us_stocks:
+                    self.log(f"   ⏭️  跳過 {len(non_us_stocks)} 支非美國公司（roic.ai 需付費）")
+
+                # 其他數據（所有股票）
                 check_if_stopped()
                 current_step += 1
-                step_num = f"{current_step}/{total_steps}"
-                self.update_progress(current_step, total_steps, "[股票] 抓取其他數據")
-                self.log(f"\n📋 步驟 {step_num}：[股票] 正在抓取其他股票數據...")
+                self.update_progress(current_step, total_steps, "[股票] 其他數據")
+                self.log(f"\n📋 步驟 {current_step}/{total_steps}：抓取其他數據...")
 
                 await manager.process_others_data()
-                self.log("✅ 其他股票數據處理完成")
+                self.log("✅ 其他數據完成")
 
                 # Revenue Growth 和 WACC
                 check_if_stopped()
                 current_step += 1
-                step_num = f"{current_step}/{total_steps}"
-                self.update_progress(current_step, total_steps, "[股票] 處理 Revenue Growth 和 WACC")
-                self.log(f"\n📈 步驟 {step_num}：[股票] 正在處理 Revenue Growth 和 WACC 數據...")
+                self.update_progress(current_step, total_steps, "[股票] Revenue Growth & WACC")
+                self.log(f"\n📈 步驟 {current_step}/{total_steps}：處理 Revenue Growth 和 WACC...")
 
                 await manager.process_seekingalpha()
                 await manager.process_wacc()
-                self.log("✅ Revenue Growth 和 WACC 數據處理完成")
+                self.log("✅ Revenue Growth 和 WACC 完成")
 
-                # Trading View
+                # TradingView
                 check_if_stopped()
                 current_step += 1
-                step_num = f"{current_step}/{total_steps}"
-                self.update_progress(current_step, total_steps, "[股票] 處理 Trading View 資料")
-                self.log(f"\n📈 步驟 {step_num}：[股票] 正在處理 Trading View 資料...")
+                self.update_progress(current_step, total_steps, "[股票] TradingView")
+                self.log(f"\n📈 步驟 {current_step}/{total_steps}：處理 TradingView...")
 
                 await manager.process_TradingView()
-                self.log("✅ Trading View 資料處理完成")
+                self.log("✅ TradingView 完成")
 
-                # 🔥 新增：財報日期（earningshub）
+                # 財報日期
                 check_if_stopped()
                 current_step += 1
-                step_num = f"{current_step}/{total_steps}"
-                self.update_progress(current_step, total_steps, "[股票] 抓取財報公布日期")
-                self.log(f"\n📅 步驟 {step_num}：[股票] 正在抓取財報公布日期（earningshub）...")
+                self.update_progress(current_step, total_steps, "[股票] 財報日期")
+                self.log(f"\n📅 步驟 {current_step}/{total_steps}：抓取財報日期...")
+
                 await manager.process_earnings_dates()
-                self.log("✅ 財報公布日期處理完成")
+                self.log("✅ 財報日期完成")
 
                 # 保存檔案
                 check_if_stopped()
                 current_step += 1
-                step_num = f"{current_step}/{total_steps}"
-                self.update_progress(current_step, total_steps, "[股票] 保存 Excel 檔案")
-                self.log(f"\n💾 步驟 {step_num}：[股票] 正在保存 Excel 檔案...")
+                self.update_progress(current_step, total_steps, "[股票] 保存 Excel")
+                self.log(f"\n💾 步驟 {current_step}/{total_steps}：保存 Excel...")
 
                 output_folder = self.output_folder_var.get()
                 saved_stock_files = manager.save_all_excel_files(output_folder)
-                self.log(f"✅ 股票分析 Excel 檔案保存完成（{len(saved_stock_files)} 個檔案）")
-                self.log("🎯" + "=" * 80)
+                self.log(f"✅ 已保存 {len(saved_stock_files)} 個股票分析檔案")
+                self.log("=" * 80)
 
-            # ===== 選擇權分析階段 =====
+            # ===== 選擇權分析階段（保持不變）=====
             saved_option_files = []
             if do_option_analysis:
                 check_if_stopped()
@@ -1241,121 +1238,81 @@ class StockAnalyzerGUI:
 
                 self.log("🎯" + "=" * 80)
 
-            # 完成時設置進度條為 100%
+            # 完成
             self.update_progress(total_steps, total_steps, "爬蟲完成！")
 
-            # 計算執行時間
             end_time = time.time()
             execution_time = end_time - start_time
 
-            # 顯示完成摘要
+            # 🔥 簡潔的完成訊息
             self.log("\n" + "🎉" + "=" * 80)
             self.log("🎊 股票爬蟲完成！")
-            self.log(f"⏱️ 總執行時間：{execution_time:.2f} 秒")
-            self.log(f"📊 成功爬蟲股票：{len(valid_stocks)} 支")
+            self.log(f"⏱️  執行時間：{execution_time:.2f} 秒")
+            self.log(f"📊 處理股票：{len(stocks_dict['final_stocks'])} 支")
 
             if do_stock_analysis:
-                self.log(f"🇺🇸 美國股票：{len(us_stocks)} 支（完整數據）")
+                if us_stocks:
+                    self.log(f"   🟢 美國公司：{len(us_stocks)} 支（完整數據）")
                 if non_us_stocks:
-                    self.log(f"🌍 非美國股票：{len(non_us_stocks)} 支（部分數據）")
-                self.log(f"💾 股票分析檔案：{len(saved_stock_files)} 個")
+                    self.log(f"   🔴 非美國公司：{len(non_us_stocks)} 支（已跳過 Financial/Ratios）")
+                self.log(f"   💾 股票檔案：{len(saved_stock_files)} 個")
 
             if do_option_analysis:
-                self.log(f"💾 選擇權分析檔案：{len(saved_option_files)} 個")
+                self.log(f"   💾 選擇權檔案：{len(saved_option_files)} 個")
 
-            total_files = len(saved_stock_files) + len(saved_option_files)
             self.log(f"📁 保存位置：{self.output_folder_var.get()}")
-
-            if saved_stock_files or saved_option_files:
-                self.log("\n📋 已保存的檔案：")
-                for file_path in saved_stock_files:
-                    filename = os.path.basename(file_path)
-                    self.log(f"   ✅ {filename}")
-                for file_path in saved_option_files:
-                    filename = os.path.basename(file_path)
-                    self.log(f"   ✅ {filename}")
-
             self.log("🎉" + "=" * 80)
 
             self.update_status("爬蟲完成！")
 
             # 顯示完成對話框
             completion_msg = f"股票爬蟲已成功完成！\n\n"
-            completion_msg += f"📊 爬蟲股票：{len(valid_stocks)} 支\n"
+            completion_msg += f"📊 處理股票：{len(stocks_dict['final_stocks'])} 支\n"
+
             if do_stock_analysis:
-                completion_msg += f"🇺🇸 美國股票：{len(us_stocks)} 支（完整數據）\n"
+                if us_stocks:
+                    completion_msg += f"🟢 美國公司：{len(us_stocks)} 支\n"
                 if non_us_stocks:
-                    completion_msg += f"🌍 非美國股票：{len(non_us_stocks)} 支（部分數據）\n"
-            completion_msg += f"⏱️ 執行時間：{execution_time:.1f} 秒\n"
-            completion_msg += f"💾 保存檔案：{total_files} 個\n"
-            completion_msg += f"📁 保存位置：{self.output_folder_var.get()}\n"
+                    completion_msg += f"🔴 非美國公司：{len(non_us_stocks)} 支\n"
+                    completion_msg += f"   （已跳過 Financial/Ratios）\n"
+
+            completion_msg += f"⏱️  執行時間：{execution_time:.1f} 秒\n"
+            completion_msg += f"💾 保存檔案：{len(saved_stock_files) + len(saved_option_files)} 個"
 
             messagebox.showinfo("🎉 爬蟲完成", completion_msg)
 
-
         except asyncio.CancelledError:
-
-            # 任務被取消時的處理
-
             self.log("🛑 爬蟲任務已被使用者取消")
-
             self.update_status("爬蟲已停止")
-
             raise
 
-
         except Exception as e:
-
-            # 發生錯誤時也要停止進度條
-
             self.reset_progress()
-
             error_msg = f"系統錯誤：{str(e)}"
-
             self.log(f"❌ {error_msg}")
-
             self.update_status("爬蟲失敗")
-
             messagebox.showerror("❌ 錯誤", f"爬蟲過程中發生錯誤：\n{str(e)}")
-
             raise e
 
-
         finally:
-
-            # 🔥 確保資源被清理（無論是正常結束還是異常）
-
+            # 清理資源
             self.log("🧹 開始最終清理...")
 
             try:
-
-                # 清理 Scraper
-
                 if scraper and scraper == self.current_scraper:
                     self.log("🧹 清理 Scraper 資源...")
-
                     await scraper.cleanup()
-
                     self.current_scraper = None
-
                     self.log("✅ Scraper 清理完成")
 
-                # 清理 Manager（如果有自己的清理邏輯）
-
                 if manager and manager == self.current_manager:
-
                     self.log("🧹 清理 Manager 資源...")
-
                     if hasattr(manager, 'cleanup'):
                         manager.cleanup()
-
                     self.current_manager = None
-
                     self.log("✅ Manager 清理完成")
 
-
             except Exception as e:
-
                 self.log(f"⚠️ 最終清理時發生錯誤（已忽略）: {e}")
 
             self.log("✅ 最終清理完成")

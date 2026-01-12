@@ -21,6 +21,7 @@ class StockProcess:
         self.semaphore = asyncio.Semaphore(max_concurrent)
         self.request_delay = request_delay  # 請求之間的延遲（秒）
         self.last_request_time = {}  # 記錄每個API的上次請求時間
+        self.schwab_client = None
 
     def create_excel_from_base64(self, stock):
         """從base64模板創建Excel文件的base64"""
@@ -514,7 +515,7 @@ class StockProcess:
             except Exception as e:
                 return excel_base64, f"處理 EPS_PE_MarketCap 資料時發生嚴重錯誤: {e}"
 
-    async def _rate_limit(self, api_key="yfinance"):
+    async def _rate_limit(self, api_key="default"):
         """實施速率限制"""
         current_time = time.time()
 
@@ -525,7 +526,6 @@ class StockProcess:
 
         if time_since_last_request < self.request_delay:
             sleep_time = self.request_delay - time_since_last_request
-            # 添加隨機延遲，避免所有請求同時發送
             sleep_time += random.uniform(0.5, 1.5)
             print(f"⏳ 等待 {sleep_time:.1f} 秒以避免API限制...")
             await asyncio.sleep(sleep_time)
@@ -533,51 +533,74 @@ class StockProcess:
         self.last_request_time[api_key] = time.time()
 
     async def _fetch_stock_data_with_retry(self, stock, max_retries=3):
-        """帶重試機制的數據獲取"""
+        """帶重試機制的數據獲取 - 使用 Schwab API"""
         for attempt in range(max_retries):
             try:
                 return await asyncio.to_thread(self._fetch_stock_data, stock)
             except Exception as e:
-                if attempt == max_retries - 1:  # 最後一次嘗試
+                if attempt == max_retries - 1:
                     raise e
 
-                # 指數退避：每次重試等待時間加倍
                 wait_time = (2 ** attempt) * 3 + random.uniform(2, 5)
                 print(f"⚠️ 獲取 {stock} 資料失敗，{wait_time:.1f}秒後重試... (嘗試 {attempt + 1}/{max_retries})")
                 await asyncio.sleep(wait_time)
 
     def _fetch_stock_data(self, stock):
-        """同步獲取股票數據"""
-        # 查詢 10 年期美國國債收益率
-        # tnx = yf.Ticker("^TNX")
-        # rf_rate = tnx.info['previousClose'] / 100
+        """
+        同步獲取股票數據 - 使用 Schwab API
 
-        # 獲取股票資料
-        Stock = yf.Ticker(stock)
-        # beta = Stock.info['beta']
-        currentPrice = Stock.info['currentPrice']
-        symbol = Stock.info['symbol']
+        🔥 改寫：移除 yfinance，改用 Schwab API
+        """
+        if not self.schwab_client:
+            raise ValueError(f"Schwab Client 未設定，無法獲取 {stock} 的數據")
 
-        return {
-            'Stock': symbol,
-            'CurrentPrice': currentPrice,
-            # 'beta': beta,
-            # 'rf_rate': rf_rate
-        }
+        try:
+            # 🔥 使用 Schwab API 獲取股票報價
+            response = self.schwab_client.quote(stock)
+
+            if not hasattr(response, 'status_code') or response.status_code != 200:
+                raise ValueError(
+                    f"Schwab API 返回錯誤狀態碼: {response.status_code if hasattr(response, 'status_code') else 'N/A'}")
+
+            data = response.json()
+
+            if stock not in data:
+                raise ValueError(f"Schwab API 回應中找不到 {stock} 的數據")
+
+            stock_data = data[stock]
+
+            # 🔥 從 quote 中提取當前價格
+            quote = stock_data.get('quote', {})
+            current_price = quote.get('lastPrice', None)
+
+            if current_price is None:
+                raise ValueError(f"無法從 Schwab API 獲取 {stock} 的當前價格")
+
+            return {
+                'Stock': stock,
+                'CurrentPrice': current_price
+            }
+
+        except Exception as e:
+            raise ValueError(f"獲取 {stock} 數據失敗: {str(e)}")
 
     async def others_data(self, stock, excel_base64):
-        """抓取其他數據並寫入Excel base64"""
-        async with self.semaphore:  # 限制併發數量
+        """
+        抓取其他數據並寫入Excel base64 - 使用 Schwab API
+
+        🔥 改寫：移除 yfinance，改用 Schwab API
+        """
+        async with self.semaphore:
             try:
-                # 添加請求延遲，避免頻率過高
-                await self._rate_limit("yfinance")
+                # 添加請求延遲
+                await self._rate_limit("schwab")
 
                 # 使用重試機制獲取數據
                 dic_data = await self._fetch_stock_data_with_retry(stock)
 
                 print(f'{stock}: {dic_data}')
 
-                # 寫入 Excel（移到線程中執行避免阻塞）
+                # 寫入 Excel
                 modified_base64 = await self._write_to_excel(excel_base64, dic_data)
 
                 return modified_base64, f'{stock}的其他資料成功寫入'
@@ -585,60 +608,26 @@ class StockProcess:
             except Exception as e:
                 return excel_base64, f"獲取 {stock} 資料時發生錯誤：{str(e)}"
 
-    def write_wacc_data_to_excel(self, stock, wacc_value, excel_base64):
-        """將WACC數據寫入Excel"""
-        try:
-            print(f"正在處理 {stock} 的WACC值: {wacc_value}")
+    async def _write_to_excel(self, excel_base64, dic_data):
+        """寫入Excel文件"""
 
-            # 解碼Excel
+        def write_excel():
             excel_binary = base64.b64decode(excel_base64)
             excel_buffer = io.BytesIO(excel_binary)
             wb = load_workbook(excel_buffer)
-            ws = wb.worksheets[3]  # 使用第四個工作表
 
-            # 清除舊資料
-            ws['C6'] = None  # 你需要根據實際Excel模板調整位置
-            ws['C7'] = None
-            # 【關鍵修復】立即保存清除後的版本
+            ws = wb.worksheets[0]
+
+            ws['EQ2'] = dic_data['Stock']
+            ws['ER2'] = dic_data['CurrentPrice']
+
+            # 儲存到base64
             output_buffer = io.BytesIO()
             wb.save(output_buffer)
             output_buffer.seek(0)
-            cleaned_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
+            return base64.b64encode(output_buffer.read()).decode('utf-8')
 
-            # 檢查是否有原始數據
-            if not wacc_value:
-                return cleaned_base64, 'EPS_PE_MarketCap: 無原始資料，已清空舊數據'
-
-            # 例如：假設WACC值寫入C6C7儲存格
-            ws['C6'] = wacc_value  # 你需要根據實際Excel模板調整位置
-            ws['C7'] = wacc_value
-            # 保存修改後的Excel
-            output_buffer = io.BytesIO()
-            wb.save(output_buffer)
-            output_buffer.seek(0)
-            modified_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
-
-            return modified_base64, f"成功將 {stock} 的WACC值 {wacc_value} 寫入Excel"
-
-        except Exception as e:
-            try:
-                # 解碼Excel
-                excel_binary = base64.b64decode(excel_base64)
-                excel_buffer = io.BytesIO(excel_binary)
-                wb = load_workbook(excel_buffer)
-                ws = wb.worksheets[3]  # 使用第四個工作表
-
-                # 清除舊資料
-                ws['C5'] = None  # 你需要根據實際Excel模板調整位置
-
-                # 【關鍵修復】立即保存清除後的版本
-                output_buffer = io.BytesIO()
-                wb.save(output_buffer)
-                output_buffer.seek(0)
-                cleaned_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
-                return cleaned_base64, f"寫入 {stock} 的WACC數據時發生錯誤: {e}"
-            except Exception as e:
-                return excel_base64, f"處理 WACC 資料時發生嚴重錯誤: {e}"
+        return await asyncio.to_thread(write_excel)
 
     def write_TradeingView_data_to_excel(self, stock, tradingview_data, excel_base64):
         """將TradingView數據寫入Excel"""
@@ -980,6 +969,34 @@ class StockProcess:
             print(f"保存檔案時發生錯誤: {e}")
             return False
 
+    def write_wacc_data_to_excel(self, stock, wacc_value, excel_base64):
+        """將WACC值寫入Excel"""
+        try:
+            print(f"正在處理 {stock} 的WACC值: {wacc_value}")
+
+            # 解碼Excel
+            excel_binary = base64.b64decode(excel_base64)
+            excel_buffer = io.BytesIO(excel_binary)
+            wb = load_workbook(excel_buffer)
+            ws = wb.worksheets[3]  # 第四個工作表（DCF 頁面）
+
+            # 清除舊資料
+            ws['C6'] = None
+
+            # 寫入WACC值
+            if wacc_value is not None:
+                ws['C6'] = wacc_value  # 寫入 C6 儲存格
+
+            # 保存修改後的Excel
+            output_buffer = io.BytesIO()
+            wb.save(output_buffer)
+            output_buffer.seek(0)
+            modified_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
+
+            return modified_base64, f"✅ 成功將 {stock} 的WACC值 {wacc_value} 寫入Excel"
+
+        except Exception as e:
+            return excel_base64, f"❌ 寫入 {stock} 的WACC數據時發生錯誤: {e}"
     # def create_option_excel_from_base64(self, stock):
     #     """從base64模板創建選擇權Excel文件的base64 - 使用xlwings"""
     #     try:
