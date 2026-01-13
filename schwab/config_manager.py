@@ -458,7 +458,7 @@ class OAuthSetupWindow:
         step1_frame = tk.LabelFrame(
             main_frame,
             text="  步驟 1: 輸入 API 憑證  ",
-            font=('微軟正黑體', 12, 'bold'),
+            font=('微軟正黑體', 14, 'bold'),
             fg='#00d4aa',
             bg='#2d2d2d',
             relief='solid',
@@ -481,7 +481,7 @@ class OAuthSetupWindow:
         self.app_key_entry = tk.Entry(
             input_frame,
             width=50,
-            font=('Consolas', 10),
+            font=('Consolas', 11),
             bg='#3d3d3d',
             fg='#ffffff',
             insertbackground='#00d4aa',
@@ -494,7 +494,7 @@ class OAuthSetupWindow:
         tk.Label(
             input_frame,
             text="🔐 App Secret:",
-            font=('微軟正黑體', 11, 'bold'),
+            font=('微軟正黑體', 12, 'bold'),
             fg='#ffffff',
             bg='#2d2d2d'
         ).grid(row=1, column=0, sticky=tk.W, pady=10)
@@ -502,7 +502,7 @@ class OAuthSetupWindow:
         self.app_secret_entry = tk.Entry(
             input_frame,
             width=50,
-            font=('Consolas', 10),
+            font=('Consolas', 11),
             bg='#3d3d3d',
             fg='#ffffff',
             insertbackground='#00d4aa',
@@ -520,7 +520,7 @@ class OAuthSetupWindow:
             btn_frame1,
             text="🔗 生成授權連結",
             command=self.generate_auth_url,
-            font=('微軟正黑體', 11, 'bold'),
+            font=('微軟正黑體', 12, 'bold'),
             bg='#00d4aa',
             fg='white',
             activebackground='#00b894',
@@ -535,7 +535,7 @@ class OAuthSetupWindow:
         step2_frame = tk.LabelFrame(
             main_frame,
             text="  步驟 2: 在瀏覽器中完成認證  ",
-            font=('微軟正黑體', 12, 'bold'),
+            font=('微軟正黑體', 14, 'bold'),
             fg='#ffb347',
             bg='#2d2d2d',
             relief='solid',
@@ -558,7 +558,7 @@ class OAuthSetupWindow:
         instruction_label = tk.Label(
             step2_frame,
             text=instruction_text,
-            font=('微軟正黑體', 10),
+            font=('微軟正黑體', 13),
             justify=tk.LEFT,
             fg='#ffffff',
             bg='#2d2d2d'
@@ -613,7 +613,7 @@ class OAuthSetupWindow:
         step3_frame = tk.LabelFrame(
             main_frame,
             text="  步驟 3: 貼上回調 URL  ",
-            font=('微軟正黑體', 12, 'bold'),
+            font=('微軟正黑體', 14, 'bold'),
             fg='#ff6b6b',
             bg='#2d2d2d',
             relief='solid',
