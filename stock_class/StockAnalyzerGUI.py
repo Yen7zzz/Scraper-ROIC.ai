@@ -35,11 +35,15 @@ from stock_class.StockValidator import StockValidator
 class StockAnalyzerGUI:
     def __init__(self, config=None):
         self.root = tk.Tk()
-        self.root.title("股票爬蟲程式 v2.1")
+        self.root.title("財報數據自動化程式 v3.0")
         self.root.geometry("1400x1000")
         self.root.configure(bg='#1a1a1a')  # 深色背景
         self.root.minsize(1200, 900)
+        # 🔥 綁定視窗關閉事件
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
+        # 🔥 綁定 Ctrl+C 處理
+        self.root.bind('<Control-c>', lambda e: self.on_closing())
         # 保存配置
         self.config = config  # 👈 儲存配置
 
@@ -71,23 +75,78 @@ class StockAnalyzerGUI:
         self.current_thread = None
         self.event_loop = None
 
-    def setup_custom_styles(self):
-        """設定現代化樣式"""
-        # 深色主題配色
-        bg_dark = '#1a1a1a'
-        bg_card = '#2d2d2d'
-        accent_blue = '#00d4aa'
-        accent_orange = '#ff6b35'
-        text_primary = '#ffffff'
-        text_secondary = '#b0b0b0'
+    def on_closing(self):
+        """處理視窗關閉事件"""
+        if self.is_running:
+            # 如果正在運行，先停止
+            response = messagebox.askyesno(
+                "⚠️ 確認退出",
+                "數據自動化正在運行中，確定要退出嗎？\n\n"
+                "這將強制停止所有任務並清理資源。"
+            )
+            if response:
+                print("\n⚠️ 用戶請求退出，開始清理資源...")
+                self.stop_analysis()  # 調用停止邏輯
 
-        # 配置主框架樣式
+                # 🔥 給更多時間讓清理完成
+                import time
+                time.sleep(3)  # 增加到 3 秒
+
+                self.root.destroy()
+        else:
+            # 沒有運行，直接關閉
+            self.root.destroy()
+
+    def setup_custom_styles(self):
+        """設定現代化樣式 - 優化字體和配色"""
+
+        # ===== 🎨 統一字體配置 =====
+        # 🔥 關鍵改進：使用一致的字體系統
+
+        # 主要字體（中英文混合）
+        FONT_PRIMARY = 'Microsoft JhengHei'  # 微軟正黑體 - 現代化、清晰
+
+        # 次要字體（純英文/數字）
+        FONT_SECONDARY = 'Segoe UI'  # Windows 原生字體
+
+        # 等寬字體（代碼/股票代碼）
+        FONT_MONOSPACE = 'Consolas'
+
+        # 字體大小
+        SIZE_TITLE = 20  # 主標題
+        SIZE_SUBTITLE = 14  # 副標題
+        SIZE_HEADING = 16  # 章節標題
+        SIZE_BODY = 13  # 內文
+        SIZE_SMALL = 12  # 小字
+        SIZE_BUTTON = 15  # 按鈕
+        SIZE_LOG = 13  # 日誌
+
+        # ===== 🎨 優化配色方案 =====
+        # 🔥 關鍵改進：提高對比度，避免過暗
+
+        # 背景色（稍微提亮）
+        bg_dark = '#1e1e1e'  # 從 #1a1a1a 改為 #1e1e1e
+        bg_card = '#2d2d2d'  # 保持不變
+        bg_input = '#3d3d3d'  # 保持不變
+
+        # 強調色（稍微調整飽和度）
+        accent_blue = '#00d4aa'  # 保持不變（主要強調色）
+        accent_orange = '#ff6b35'  # 保持不變（警告/停止）
+        accent_green = '#00b894'  # 新增：成功狀態
+
+        # 文字顏色（提高對比度）
+        text_primary = '#f5f5f5'  # 從 #ffffff 改為稍柔和的白色
+        text_secondary = '#c0c0c0'  # 從 #b0b0b0 提亮
+        text_muted = '#909090'  # 新增：更暗的次要文字
+        text_warning = '#ffd93d'  # 新增：警告色（更醒目）
+
+        # ===== 配置主框架樣式 =====
         self.style.configure('Card.TFrame',
                              background=bg_card,
                              relief='flat',
                              borderwidth=1)
 
-        # 配置標籤框架樣式
+        # ===== 配置標籤框架樣式 =====
         self.style.configure('Card.TLabelframe',
                              background=bg_card,
                              foreground=text_primary,
@@ -97,21 +156,21 @@ class StockAnalyzerGUI:
         self.style.configure('Card.TLabelframe.Label',
                              background=bg_card,
                              foreground=accent_blue,
-                             font=('Microsoft JhengHei', 12, 'bold'))
+                             font=(FONT_PRIMARY, SIZE_HEADING, 'bold'))  # 🔥 統一字體
 
-        # 主要按鈕樣式
+        # ===== 主要按鈕樣式 =====
         self.style.configure('Primary.TButton',
-                             font=('Microsoft JhengHei', 11, 'bold'),
+                             font=(FONT_PRIMARY, SIZE_BUTTON, 'bold'),  # 🔥 統一字體
                              foreground='white',
                              focuscolor='none',
                              borderwidth=0,
                              padding=(20, 10))
         self.style.map('Primary.TButton',
-                       background=[('active', '#00b894'), ('!active', accent_blue)])
+                       background=[('active', accent_green), ('!active', accent_blue)])
 
-        # 停止按鈕樣式
+        # ===== 停止按鈕樣式 =====
         self.style.configure('Danger.TButton',
-                             font=('Microsoft JhengHei', 11, 'bold'),
+                             font=(FONT_PRIMARY, SIZE_BUTTON, 'bold'),  # 🔥 統一字體
                              foreground='white',
                              focuscolor='none',
                              borderwidth=0,
@@ -119,9 +178,9 @@ class StockAnalyzerGUI:
         self.style.map('Danger.TButton',
                        background=[('active', '#e84393'), ('!active', accent_orange)])
 
-        # 瀏覽按鈕樣式
+        # ===== 瀏覽按鈕樣式 =====
         self.style.configure('Secondary.TButton',
-                             font=('Microsoft JhengHei', 9),
+                             font=(FONT_PRIMARY, SIZE_SMALL),  # 🔥 統一字體
                              foreground=text_primary,
                              focuscolor='none',
                              borderwidth=1,
@@ -129,29 +188,29 @@ class StockAnalyzerGUI:
         self.style.map('Secondary.TButton',
                        background=[('active', '#636e72'), ('!active', '#74b9ff')])
 
-        # 標籤樣式
+        # ===== 標籤樣式 =====
         self.style.configure('Title.TLabel',
                              background=bg_card,
                              foreground=text_primary,
-                             font=('Microsoft JhengHei', 14))
+                             font=(FONT_PRIMARY, SIZE_TITLE))  # 🔥 統一字體
 
         self.style.configure('Subtitle.TLabel',
                              background=bg_card,
                              foreground=text_secondary,
-                             font=('Microsoft JhengHei', 10))
+                             font=(FONT_PRIMARY, SIZE_SUBTITLE))  # 🔥 統一字體
 
-        # 輸入框樣式
+        # ===== 輸入框樣式 =====
         self.style.configure('Modern.TEntry',
-                             fieldbackground='#3d3d3d',
+                             fieldbackground=bg_input,
                              foreground=text_primary,
                              borderwidth=1,
                              insertcolor=text_primary,
                              selectbackground=accent_blue)
 
-        # 進度條樣式
+        # ===== 進度條樣式 =====
         self.style.configure('Modern.Horizontal.TProgressbar',
                              background=accent_blue,
-                             troughcolor='#3d3d3d',
+                             troughcolor=bg_input,
                              borderwidth=0,
                              lightcolor=accent_blue,
                              darkcolor=accent_blue,
@@ -161,70 +220,110 @@ class StockAnalyzerGUI:
                        background=[('active', accent_blue),
                                    ('!active', accent_blue)])
 
+        # 🔥 保存配色方案供其他地方使用
+        self.colors = {
+            'bg_dark': bg_dark,
+            'bg_card': bg_card,
+            'bg_input': bg_input,
+            'accent_blue': accent_blue,
+            'accent_orange': accent_orange,
+            'accent_green': accent_green,
+            'text_primary': text_primary,
+            'text_secondary': text_secondary,
+            'text_muted': text_muted,
+            'text_warning': text_warning
+        }
+
+        # 🔥 保存字體方案供其他地方使用
+        self.fonts = {
+            'primary': FONT_PRIMARY,
+            'secondary': FONT_SECONDARY,
+            'monospace': FONT_MONOSPACE,
+            'size_title': SIZE_TITLE,
+            'size_subtitle': SIZE_SUBTITLE,
+            'size_heading': SIZE_HEADING,
+            'size_body': SIZE_BODY,
+            'size_small': SIZE_SMALL,
+            'size_button': SIZE_BUTTON,
+            'size_log': SIZE_LOG
+        }
+
     def setup_ui(self):
-        # 主框架 - 減少外邊距
-        main_frame = tk.Frame(self.root, bg='#1a1a1a')
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)  # 從 20 改成 15
+        """優化版面配置 - 日誌空間更大，設定區域更緊湊"""
 
-        # 標題區域 - 大幅縮小
-        title_frame = tk.Frame(main_frame, bg='#2d2d2d', relief='flat', bd=2)
-        title_frame.pack(fill=tk.X, pady=(0, 10))  # 從 15 改成 10
+        # 主框架
+        main_frame = tk.Frame(self.root, bg=self.colors['bg_dark'])
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
 
-        title_content = tk.Frame(title_frame, bg='#2d2d2d')
-        title_content.pack(fill=tk.X, padx=20, pady=10)  # 從 25, 15 改成 20, 10
+        # ===== 標題區域（大幅縮小）=====
+        title_frame = tk.Frame(main_frame, bg=self.colors['bg_card'], relief='flat', bd=2)
+        title_frame.pack(fill=tk.X, pady=(0, 8))  # 🔥 從 10 改成 8
 
-        # 縮小標題字體
-        title_label = tk.Label(title_content,
-                               text="📊 股票爬蟲程式",
-                               font=('標楷體', 18, 'bold'),  # 從 22 改成 18
-                               foreground='#00d4aa',
-                               bg='#2d2d2d')
+        title_content = tk.Frame(title_frame, bg=self.colors['bg_card'])
+        title_content.pack(fill=tk.X, padx=15, pady=6)  # 🔥 從 20, 10 改成 15, 6
+
+        # 主標題（縮小字體）
+        title_label = tk.Label(
+            title_content,
+            text="📊 財報數據自動化系統",
+            font=(self.fonts['primary'], 18, 'bold'),  # 🔥 從 18 改成 16
+            foreground=self.colors['accent_blue'],
+            bg=self.colors['bg_card']
+        )
         title_label.pack()
 
-        subtitle_label = tk.Label(title_content,
-                                  text="專業級股票數據爬蟲工具 | Version 2.1",
-                                  font=('標楷體', 11),  # 從 16 改成 11
-                                  foreground='#b0b0b0',
-                                  bg='#2d2d2d')
-        subtitle_label.pack(pady=(3, 0))  # 從 5 改成 3
+        # 副標題（縮小字體）
+        subtitle_label = tk.Label(
+            title_content,
+            text="財報數據自動化工具 | Version 3.0",
+            font=(self.fonts['primary'], 10),  # 🔥 從 12 改成 10
+            foreground=self.colors['text_secondary'],
+            bg=self.colors['bg_card']
+        )
+        subtitle_label.pack(pady=(2, 0))  # 🔥 從 3 改成 2
 
-        # 輸入區域框架 - 縮小間距
-        input_frame = tk.Frame(main_frame, bg='#2d2d2d', relief='flat', bd=2)
-        input_frame.pack(fill=tk.X, pady=(0, 10))  # 從 15 改成 10
+        # ===== 輸入區域框架（壓縮間距）=====
+        input_frame = tk.Frame(main_frame, bg=self.colors['bg_card'], relief='flat', bd=2)
+        input_frame.pack(fill=tk.X, pady=(0, 8))  # 🔥 從 10 改成 8
 
-        input_content = tk.Frame(input_frame, bg='#2d2d2d')
-        input_content.pack(fill=tk.X, padx=15, pady=10)  # 從 20, 15 改成 15, 10
+        input_content = tk.Frame(input_frame, bg=self.colors['bg_card'])
+        input_content.pack(fill=tk.X, padx=12, pady=8)  # 🔥 從 15, 10 改成 12, 8
 
-        input_title = tk.Label(input_content,
-                               text="🔍 爬蟲設定",
-                               font=('標楷體', 14, 'bold'),  # 從 16 改成 14
-                               foreground='#00d4aa',
-                               bg='#2d2d2d')
-        input_title.pack(anchor=tk.W, pady=(0, 8))  # 從 10 改成 8
+        # 設定標題
+        input_title = tk.Label(
+            input_content,
+            text="🔍 設定",
+            font=(self.fonts['primary'], 12, 'bold'),  # 🔥 從 14 改成 12
+            foreground=self.colors['accent_blue'],
+            bg=self.colors['bg_card']
+        )
+        input_title.pack(anchor=tk.W, pady=(0, 6))  # 🔥 從 8 改成 6
 
-        # ===== 模板選擇區域 - 縮小間距 =====
-        template_frame = tk.Frame(input_content, bg='#2d2d2d')
-        template_frame.pack(fill=tk.X, pady=(0, 10))  # 從 15 改成 10
+        # ===== 模板選擇區域（壓縮）=====
+        template_frame = tk.Frame(input_content, bg=self.colors['bg_card'])
+        template_frame.pack(fill=tk.X, pady=(0, 6))  # 🔥 從 10 改成 6
 
-        tk.Label(template_frame,
-                 text="📋 選擇分析模板",
-                 font=('標楷體', 12, 'bold'),  # 從 14 改成 12
-                 foreground='#ffffff',
-                 bg='#2d2d2d').pack(anchor=tk.W, pady=(0, 6))  # 從 10 改成 6
+        tk.Label(
+            template_frame,
+            text="📋 選擇模板",
+            font=(self.fonts['primary'], 10, 'bold'),  # 🔥 從 11 改成 10
+            foreground=self.colors['text_primary'],
+            bg=self.colors['bg_card']
+        ).pack(anchor=tk.W, pady=(0, 4))  # 🔥 從 6 改成 4
 
         # 卡片容器
-        cards_container = tk.Frame(template_frame, bg='#2d2d2d')
+        cards_container = tk.Frame(template_frame, bg=self.colors['bg_card'])
         cards_container.pack(fill=tk.X)
 
         # 股票分析卡片
         self.stock_card = self.create_template_card(
             cards_container,
-            title="📈 股票深度分析",
+            title="📈 財報基本面分析",
             descriptions=[
                 "✓ 完整財務報表",
-                "✓ 估值與成長分析",
-                "✓ 關鍵財務比率",
-                "✓ WACC 與 DCF"
+                "✓ 財報健檢",
+                "✓ F.A.C.T.S系統",
+                "✓ DCF 現金流折現法"
             ],
             variable=self.stock_analysis_var,
             side=tk.LEFT
@@ -235,238 +334,290 @@ class StockAnalyzerGUI:
             cards_container,
             title="📊 選擇權鏈分析",
             descriptions=[
-                "✓ 即時履約價資訊",
-                "✓ 隱含波動率分析",
-                "✓ 到期日結構",
-                "✓ Greeks 數據"
+                "✓ 所有選擇權合約資訊",
+                "✓ 分析主頁",
+                "✓ 總結主頁",
+                "✓ 選擇權步驟指引與建議"
             ],
             variable=self.option_analysis_var,
             side=tk.LEFT,
-            padx=(10, 0)  # 從 15 改成 10
+            padx=(8, 0)  # 🔥 從 10 改成 8
         )
 
-        # 股票代碼輸入區 - 縮小間距
-        stock_frame = tk.Frame(input_content, bg='#2d2d2d')
-        stock_frame.pack(fill=tk.X, pady=(8, 6))  # 從 10 改成 8, 6
+        # ===== 股票代碼輸入區（壓縮）=====
+        stock_frame = tk.Frame(input_content, bg=self.colors['bg_card'])
+        stock_frame.pack(fill=tk.X, pady=(6, 4))  # 🔥 從 8, 6 改成 6, 4
 
-        tk.Label(stock_frame,
-                 text="💼 股票代碼",
-                 font=('標楷體', 12, 'bold'),  # 從 14 改成 12
-                 foreground='#ffffff',
-                 bg='#2d2d2d').pack(anchor=tk.W, pady=(0, 4))  # 從 5 改成 4
+        tk.Label(
+            stock_frame,
+            text="💼 股票代碼",
+            font=(self.fonts['primary'], 10, 'bold'),  # 🔥 從 11 改成 10
+            foreground=self.colors['text_primary'],
+            bg=self.colors['bg_card']
+        ).pack(anchor=tk.W, pady=(0, 3))  # 🔥 從 4 改成 3
 
-        stocks_entry = tk.Entry(stock_frame,
-                                textvariable=self.stocks_var,
-                                font=('Consolas', 11),  # 從 12 改成 11
-                                bg='#3d3d3d',
-                                fg='#ffffff',
-                                insertbackground='#00d4aa',
-                                selectbackground='#00d4aa',
-                                selectforeground='#000000',
-                                relief='flat',
-                                bd=2)
-        stocks_entry.pack(fill=tk.X, ipady=5)  # 從 6 改成 5
+        # 輸入框
+        stocks_entry = tk.Entry(
+            stock_frame,
+            textvariable=self.stocks_var,
+            font=(self.fonts['monospace'], 10),  # 🔥 從 11 改成 10
+            bg=self.colors['bg_input'],
+            fg=self.colors['text_primary'],
+            insertbackground=self.colors['accent_blue'],
+            selectbackground=self.colors['accent_blue'],
+            selectforeground='#000000',
+            relief='flat',
+            bd=2
+        )
+        stocks_entry.pack(fill=tk.X, ipady=4)  # 🔥 從 5 改成 4
 
-        help_label = tk.Label(stock_frame,
-                              text="💡 輸入股票代碼，多個代碼請用逗號分隔 (例如: NVDA, MSFT, AAPL, GOOGL)\n💡 代碼中若包含『-』請直接輸入(例如：BRK-B)\n💡 若輸入非美國股票代碼，部分資料將有缺失！",
-                              font=('Times New Roman', 10),  # 從 12 改成 10
-                              foreground='#ffb347',
-                              bg='#2d2d2d',
-                              justify=tk.LEFT)
-        help_label.pack(anchor=tk.W, pady=(4, 0))  # 從 5 改成 4
+        # 提示文字（縮小字體）
+        help_label = tk.Label(
+            stock_frame,
+            text=(
+                "💡 輸入股票代碼，多個代碼請用逗號分隔 (例如: NVDA, MSFT, AAPL)\n"
+                "💡 代碼中若包含『-』請直接輸入(例如：BRK-B)\n"
+                "💡 若輸入非美國股票代碼，部分資料將有缺失！"
+            ),
+            font=(self.fonts['primary'], 9),  # 🔥 從 10 改成 9
+            foreground=self.colors['text_warning'],
+            bg=self.colors['bg_card'],
+            justify=tk.LEFT
+        )
+        help_label.pack(anchor=tk.W, pady=(3, 0))  # 🔥 從 4 改成 3
 
-        # 輸出資料夾選擇 - 縮小間距
-        folder_frame = tk.Frame(input_content, bg='#2d2d2d')
-        folder_frame.pack(fill=tk.X, pady=(6, 0))  # 從 10 改成 6
+        # ===== 輸出資料夾選擇（壓縮）=====
+        folder_frame = tk.Frame(input_content, bg=self.colors['bg_card'])
+        folder_frame.pack(fill=tk.X, pady=(4, 0))  # 🔥 從 6 改成 4
 
-        tk.Label(folder_frame,
-                 text="📁 輸出資料夾",
-                 font=('標楷體', 12, 'bold'),  # 從 14 改成 12
-                 foreground='#ffffff',
-                 bg='#2d2d2d').pack(anchor=tk.W, pady=(0, 4))  # 從 5 改成 4
+        tk.Label(
+            folder_frame,
+            text="📁 資料夾路徑",
+            font=(self.fonts['primary'], 10, 'bold'),  # 🔥 從 11 改成 10
+            foreground=self.colors['text_primary'],
+            bg=self.colors['bg_card']
+        ).pack(anchor=tk.W, pady=(0, 3))  # 🔥 從 4 改成 3
 
-        folder_input_frame = tk.Frame(folder_frame, bg='#2d2d2d')
+        folder_input_frame = tk.Frame(folder_frame, bg=self.colors['bg_card'])
         folder_input_frame.pack(fill=tk.X)
 
-        folder_entry = tk.Entry(folder_input_frame,
-                                textvariable=self.output_folder_var,
-                                font=('Consolas', 11),  # 從 12 改成 11
-                                bg='#3d3d3d',
-                                fg='#ffffff',
-                                insertbackground='#00d4aa',
-                                relief='flat',
-                                bd=2)
-        folder_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4)  # 從 5 改成 4
+        # 路徑輸入框
+        folder_entry = tk.Entry(
+            folder_input_frame,
+            textvariable=self.output_folder_var,
+            font=(self.fonts['monospace'], 10),  # 🔥 從 11 改成 10
+            bg=self.colors['bg_input'],
+            fg=self.colors['text_primary'],
+            insertbackground=self.colors['accent_blue'],
+            relief='flat',
+            bd=2
+        )
+        folder_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=3)  # 🔥 從 4 改成 3
 
-        browse_btn = tk.Button(folder_input_frame,
-                               text="📂 瀏覽",
-                               command=self.browse_folder,
-                               font=('新細明體', 10, 'bold'),  # 從 12 改成 10
-                               bg='#74b9ff',
-                               fg='white',
-                               activebackground='#0984e3',
-                               activeforeground='white',
-                               relief='flat',
-                               bd=0,
-                               cursor='hand2')
-        browse_btn.pack(side=tk.RIGHT, padx=(6, 0), ipady=4, ipadx=10)  # 從 8, 5, 12 改成 6, 4, 10
+        # 瀏覽按鈕
+        browse_btn = tk.Button(
+            folder_input_frame,
+            text="📂 瀏覽",
+            command=self.browse_folder,
+            font=(self.fonts['primary'], 9, 'bold'),  # 🔥 從 10 改成 9
+            bg='#74b9ff',
+            fg='white',
+            activebackground='#0984e3',
+            activeforeground='white',
+            relief='flat',
+            bd=0,
+            cursor='hand2'
+        )
+        browse_btn.pack(side=tk.RIGHT, padx=(5, 0), ipady=3, ipadx=8)  # 🔥 從 6, 4, 10 改成 5, 3, 8
 
-        # 控制區域框架 - 大幅縮小
-        control_frame = tk.Frame(main_frame, bg='#2d2d2d', relief='flat', bd=2)
-        control_frame.pack(fill=tk.X, pady=(0, 10))  # 從 15 改成 10
+        # ===== 控制區域框架（大幅壓縮）=====
+        control_frame = tk.Frame(main_frame, bg=self.colors['bg_card'], relief='flat', bd=2)
+        control_frame.pack(fill=tk.X, pady=(0, 8))  # 🔥 從 10 改成 8
 
-        control_content = tk.Frame(control_frame, bg='#2d2d2d')
-        control_content.pack(fill=tk.X, padx=15, pady=10)  # 從 20, 15 改成 15, 10
+        control_content = tk.Frame(control_frame, bg=self.colors['bg_card'])
+        control_content.pack(fill=tk.X, padx=12, pady=8)  # 🔥 從 15, 10 改成 12, 8
 
-        control_title = tk.Label(control_content,
-                                 text="🎮 分析控制",
-                                 font=('標楷體', 14, 'bold'),  # 從 16 改成 14
-                                 foreground='#00d4aa',
-                                 bg='#2d2d2d')
-        control_title.pack(anchor=tk.W, pady=(0, 8))  # 從 10 改成 8
+        # 控制標題
+        control_title = tk.Label(
+            control_content,
+            text="🎮 分析控制",
+            font=(self.fonts['primary'], 12, 'bold'),  # 🔥 從 14 改成 12
+            foreground=self.colors['accent_blue'],
+            bg=self.colors['bg_card']
+        )
+        control_title.pack(anchor=tk.W, pady=(0, 6))  # 🔥 從 8 改成 6
 
-        # 按鈕區 - 縮小按鈕
-        button_frame = tk.Frame(control_content, bg='#2d2d2d')
-        button_frame.pack(pady=(0, 10))  # 從 15 改成 10
+        # ===== 按鈕區（縮小按鈕）=====
+        button_frame = tk.Frame(control_content, bg=self.colors['bg_card'])
+        button_frame.pack(pady=(0, 6))  # 🔥 從 10 改成 6
 
-        self.start_btn = tk.Button(button_frame,
-                                   text="🚀 開始爬蟲",
-                                   command=self.start_analysis,
-                                   font=('標楷體', 13, 'bold'),  # 從 15 改成 13
-                                   bg='#00d4aa',
-                                   fg='white',
-                                   activebackground='#00b894',
-                                   activeforeground='white',
-                                   relief='flat',
-                                   bd=0,
-                                   cursor='hand2',
-                                   width=12,  # 從 15 改成 12
-                                   height=1)  # 從 2 改成 1
-        self.start_btn.pack(side=tk.LEFT, padx=(0, 10))  # 從 15 改成 10
+        # 開始按鈕
+        self.start_btn = tk.Button(
+            button_frame,
+            text="🚀 開始",
+            command=self.start_analysis,
+            font=(self.fonts['primary'], 11, 'bold'),  # 🔥 從 13 改成 11
+            bg=self.colors['accent_blue'],
+            fg='white',
+            activebackground=self.colors['accent_green'],
+            activeforeground='white',
+            relief='flat',
+            bd=0,
+            cursor='hand2',
+            width=10,  # 🔥 從 12 改成 10
+            height=1
+        )
+        self.start_btn.pack(side=tk.LEFT, padx=(0, 8))  # 🔥 從 10 改成 8
 
-        self.stop_btn = tk.Button(button_frame,
-                                  text="⏹️ 停止爬蟲",
-                                  command=self.stop_analysis,
-                                  font=('標楷體', 13, 'bold'),  # 從 15 改成 13
-                                  bg='#ff6b35',
-                                  fg='white',
-                                  activebackground='#e84393',
-                                  activeforeground='white',
-                                  relief='flat',
-                                  bd=0,
-                                  cursor='hand2',
-                                  width=12,  # 從 15 改成 12
-                                  height=1,  # 從 2 改成 1
-                                  state=tk.DISABLED)
+        # 停止按鈕
+        self.stop_btn = tk.Button(
+            button_frame,
+            text="⏹️ 停止",
+            command=self.stop_analysis,
+            font=(self.fonts['primary'], 11, 'bold'),  # 🔥 從 13 改成 11
+            bg=self.colors['accent_orange'],
+            fg='white',
+            activebackground='#e84393',
+            activeforeground='white',
+            relief='flat',
+            bd=0,
+            cursor='hand2',
+            width=10,  # 🔥 從 12 改成 10
+            height=1,
+            state=tk.DISABLED
+        )
         self.stop_btn.pack(side=tk.LEFT)
 
-        # 進度區域 - 縮小間距
-        progress_frame = tk.Frame(control_content, bg='#2d2d2d')
-        progress_frame.pack(fill=tk.X, pady=(0, 8))  # 從 10 改成 8
+        # ===== 進度區域（壓縮）=====
+        progress_frame = tk.Frame(control_content, bg=self.colors['bg_card'])
+        progress_frame.pack(fill=tk.X, pady=(0, 6))  # 🔥 從 8 改成 6
 
-        tk.Label(progress_frame,
-                 text="📊 爬蟲進度",
-                 font=('標楷體', 11, 'bold'),  # 從 12 改成 11
-                 foreground='#ffffff',
-                 bg='#2d2d2d').pack(anchor=tk.W, pady=(0, 4))  # 從 5 改成 4
+        tk.Label(
+            progress_frame,
+            text="📊 數據自動化進度",
+            font=(self.fonts['primary'], 10, 'bold'),  # 🔥 從 11 改成 10
+            foreground=self.colors['text_primary'],
+            bg=self.colors['bg_card']
+        ).pack(anchor=tk.W, pady=(0, 3))  # 🔥 從 4 改成 3
 
-        progress_container = tk.Frame(progress_frame, bg='#3d3d3d', height=16)  # 從 20 改成 16
-        progress_container.pack(fill=tk.X, pady=(0, 6))  # 從 8 改成 6
+        # 進度條容器（縮小高度）
+        progress_container = tk.Frame(progress_frame, bg=self.colors['bg_input'], height=14)  # 🔥 從 16 改成 14
+        progress_container.pack(fill=tk.X, pady=(0, 4))  # 🔥 從 6 改成 4
         progress_container.pack_propagate(False)
 
-        self.progress = ttk.Progressbar(progress_container,
-                                        mode='determinate',
-                                        maximum=100,
-                                        value=0,
-                                        style='Modern.Horizontal.TProgressbar',
-                                        length=400)
+        self.progress = ttk.Progressbar(
+            progress_container,
+            mode='determinate',
+            maximum=100,
+            value=0,
+            style='Modern.Horizontal.TProgressbar',
+            length=400
+        )
         self.progress.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
 
-        self.progress_percent_label = tk.Label(progress_frame,
-                                               text="0%",
-                                               font=('標楷體', 9, 'bold'),  # 從 10 改成 9
-                                               foreground='#00d4aa',
-                                               bg='#2d2d2d')
+        # 百分比標籤
+        self.progress_percent_label = tk.Label(
+            progress_frame,
+            text="0%",
+            font=(self.fonts['secondary'], 9, 'bold'),  # 🔥 從 10 改成 9
+            foreground=self.colors['accent_blue'],
+            bg=self.colors['bg_card']
+        )
         self.progress_percent_label.pack(anchor=tk.W, pady=(2, 0))
 
-        self.status_label = tk.Label(control_content,
-                                     text="✅ 系統準備就緒",
-                                     font=('標楷體', 12, 'bold'),  # 從 13 改成 12
-                                     foreground='#00d4aa',
-                                     bg='#2d2d2d')
-        self.status_label.pack(pady=(8, 0))  # 從 10 改成 8
+        # 狀態標籤
+        self.status_label = tk.Label(
+            control_content,
+            text="✅ 系統準備就緒",
+            font=(self.fonts['primary'], 10, 'bold'),  # 🔥 從 12 改成 10
+            foreground=self.colors['accent_blue'],
+            bg=self.colors['bg_card']
+        )
+        self.status_label.pack(pady=(6, 0))  # 🔥 從 8 改成 6
 
-        # 日誌區域框架 - 這是最重要的，設定最小高度
-        log_frame = tk.Frame(main_frame, bg='#2d2d2d', relief='flat', bd=2)
-        log_frame.pack(fill=tk.BOTH, expand=True)
+        # ===== 日誌區域框架（🔥 關鍵：擴大空間）=====
+        log_frame = tk.Frame(main_frame, bg=self.colors['bg_card'], relief='flat', bd=2)
+        log_frame.pack(fill=tk.BOTH, expand=True)  # 🔥 使用 expand=True 佔據剩餘空間
 
-        log_content = tk.Frame(log_frame, bg='#2d2d2d')
-        log_content.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)  # 從 20, 15 改成 15, 10
+        log_content = tk.Frame(log_frame, bg=self.colors['bg_card'])
+        log_content.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)  # 🔥 從 15, 10 改成 12, 8
 
-        log_title = tk.Label(log_content,
-                             text="📋 執行日誌",
-                             font=('標楷體', 14, 'bold'),  # 從 16 改成 14
-                             foreground='#00d4aa',
-                             bg='#2d2d2d')
-        log_title.pack(anchor=tk.W, pady=(0, 6))  # 從 8 改成 6
+        # 日誌標題
+        log_title = tk.Label(
+            log_content,
+            text="📋 執行日誌",
+            font=(self.fonts['primary'], 12, 'bold'),  # 🔥 從 14 改成 12
+            foreground=self.colors['accent_blue'],
+            bg=self.colors['bg_card']
+        )
+        log_title.pack(anchor=tk.W, pady=(0, 4))  # 🔥 從 6 改成 4
 
-        # 日誌文字框 - 確保有足夠高度
-        self.log_text = scrolledtext.ScrolledText(log_content,
-                                                  font=('Consolas', 11),  # 從 12 改成 11
-                                                  bg='#1a1a1a',
-                                                  fg='#00ff00',
-                                                  insertbackground='#00d4aa',
-                                                  selectbackground='#00d4aa',
-                                                  selectforeground='#000000',
-                                                  relief='flat',
-                                                  bd=2,
-                                                  wrap=tk.WORD,
-                                                  height=20)  # 🔥 新增：設定最小高度為 20 行
-        self.log_text.pack(fill=tk.BOTH, expand=True)
+        # 🔥 日誌文字框（增加最小高度）
+        self.log_text = scrolledtext.ScrolledText(
+            log_content,
+            font=(self.fonts['monospace'], 14),  # 🔥 從 11 改成 10
+            bg='#1a1a1a',
+            fg='#00ff00',
+            insertbackground=self.colors['accent_blue'],
+            selectbackground=self.colors['accent_blue'],
+            selectforeground='#000000',
+            relief='flat',
+            bd=2,
+            wrap=tk.WORD,
+            height=25  # 🔥 從 20 增加到 25
+        )
+        self.log_text.pack(fill=tk.BOTH, expand=True)  # 🔥 確保填滿所有剩餘空間
 
         # 初始化日誌
-        self.log_text.insert(tk.END, "=== 股票爬蟲程式已啟動 ===\n")
-        self.log_text.insert(tk.END, "系統準備就緒，請選擇模板並輸入股票代碼開始爬蟲...\n\n")
+        self.log_text.insert(tk.END, "=== 程式已啟動 ===\n")
+        self.log_text.insert(tk.END, "系統準備就緒，請選擇模板並輸入股票代碼開始自動化...\n\n")
 
     def create_template_card(self, parent, title, descriptions, variable, side=tk.LEFT, padx=(0, 0)):
-        """創建模板選擇卡片"""
+        """創建模板選擇卡片 - 壓縮版本"""
+
         # 卡片外框
-        card_frame = tk.Frame(parent, bg='#3d3d3d', relief='flat', bd=2, cursor='hand2')
+        card_frame = tk.Frame(parent, bg=self.colors['bg_input'], relief='flat', bd=2, cursor='hand2')
         card_frame.pack(side=side, padx=padx, fill=tk.BOTH, expand=True)
 
-        # 卡片內容容器
-        card_content = tk.Frame(card_frame, bg='#3d3d3d')
-        card_content.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)  # 從 15 改成 12
+        # 卡片內容容器（減少 padding）
+        card_content = tk.Frame(card_frame, bg=self.colors['bg_input'])
+        card_content.pack(fill=tk.BOTH, expand=True, padx=10, pady=8)  # 🔥 從 12, 12 改成 10, 8
 
-        # 標題
-        title_label = tk.Label(card_content,
-                               text=title,
-                               font=('標楷體', 12, 'bold'),  # 從 14 改成 12
-                               foreground='#ffffff',
-                               bg='#3d3d3d')
-        title_label.pack(anchor=tk.W, pady=(0, 8))  # 從 10 改成 8
+        # 標題（縮小字體）
+        title_label = tk.Label(
+            card_content,
+            text=title,
+            font=(self.fonts['primary'], 13, 'bold'),  # 🔥 從 11 改成 10
+            foreground=self.colors['text_primary'],
+            bg=self.colors['bg_input']
+        )
+        title_label.pack(anchor=tk.W, pady=(0, 6))  # 🔥 從 8 改成 6
 
         # 分隔線
-        separator = tk.Frame(card_content, bg='#00d4aa', height=2)
-        separator.pack(fill=tk.X, pady=(0, 8))  # 從 10 改成 8
+        separator = tk.Frame(card_content, bg=self.colors['accent_blue'], height=2)
+        separator.pack(fill=tk.X, pady=(0, 6))  # 🔥 從 8 改成 6
 
-        # 描述文字
+        # 描述文字（縮小字體和間距）
         for desc in descriptions:
-            desc_label = tk.Label(card_content,
-                                  text=desc,
-                                  font=('Microsoft JhengHei', 9),  # 從 10 改成 9
-                                  foreground='#b0b0b0',
-                                  bg='#3d3d3d',
-                                  anchor=tk.W)
-            desc_label.pack(anchor=tk.W, pady=1)  # 從 2 改成 1
+            desc_label = tk.Label(
+                card_content,
+                text=desc,
+                font=(self.fonts['primary'], 12),  # 🔥 從 10 改成 9
+                foreground=self.colors['text_secondary'],
+                bg=self.colors['bg_input'],
+                anchor=tk.W
+            )
+            desc_label.pack(anchor=tk.W, pady=1)
 
         # 狀態標籤
-        status_label = tk.Label(card_content,
-                                text="[已選擇]" if variable.get() else "[點擊選擇]",
-                                font=('標楷體', 10, 'bold'),  # 從 11 改成 10
-                                foreground='#00d4aa' if variable.get() else '#666666',
-                                bg='#3d3d3d')
-        status_label.pack(pady=(10, 0))  # 從 15 改成 10
+        status_label = tk.Label(
+            card_content,
+            text="[已選擇]" if variable.get() else "[點擊選擇]",
+            font=(self.fonts['primary'], 9, 'bold'),  # 🔥 從 10 改成 9
+            foreground=self.colors['accent_blue'] if variable.get() else '#666666',
+            bg=self.colors['bg_input']
+        )
+        status_label.pack(pady=(8, 0))  # 🔥 從 10 改成 8
 
         # 綁定點擊事件
         def toggle_selection(event=None):
@@ -482,15 +633,15 @@ class StockAnalyzerGUI:
         # 懸停效果
         def on_enter(event):
             if variable.get():
-                card_frame.config(bg='#00d4aa', bd=3)
+                card_frame.config(bg=self.colors['accent_blue'], bd=3)
             else:
                 card_frame.config(bg='#555555', bd=3)
 
         def on_leave(event):
             if variable.get():
-                card_frame.config(bg='#00d4aa', bd=2)
+                card_frame.config(bg=self.colors['accent_blue'], bd=2)
             else:
-                card_frame.config(bg='#3d3d3d', bd=2)
+                card_frame.config(bg=self.colors['bg_input'], bd=2)
 
         card_frame.bind('<Enter>', on_enter)
         card_frame.bind('<Leave>', on_leave)
@@ -712,12 +863,12 @@ class StockAnalyzerGUI:
         templates_str = "\n   ".join(templates_text)
 
         confirmation_message = (
-            f"即將驗證並爬蟲以下股票：\n"
+            f"即將驗證並數據自動化以下股票：\n"
             f"📈 {', '.join(stocks)}\n\n"
             f"📋 分析模板：\n"
             f"   {templates_str}\n\n"
             f"🔍 系統將先驗證股票代碼有效性\n"
-            f"📊 僅爬蟲有效的股票代碼\n"
+            f"📊 僅數據自動化有效的股票代碼\n"
             f"🔥 預計需要數分鐘時間\n\n"
             f"是否開始？"
         )
@@ -742,36 +893,36 @@ class StockAnalyzerGUI:
         self.current_thread.start()
 
     def stop_analysis(self):
-        """立即強制停止分析並清理所有資源 - 改進版"""
+        """立即強制停止分析並清理所有資源 - 修復遞迴錯誤"""
         try:
-            # 🔥 Step 1: 立即設定停止標誌
+            # Step 1: 立即設定停止標誌
             self.is_running = False
             self.log("🛑 使用者請求立即停止，開始強制清理資源...")
 
-            # 🔥 Step 2: 強制清理 Playwright 資源（最重要）
+            # Step 2: 強制清理 Playwright 資源
             with self.cleanup_lock:
-                cleanup_tasks = []
-
                 # 清理 Scraper
                 if self.current_scraper:
                     self.log("🧹 正在關閉 Playwright 瀏覽器...")
                     try:
-                        # 如果事件循環還在運行，使用 run_coroutine_threadsafe
                         if self.event_loop and self.event_loop.is_running():
-                            future = asyncio.run_coroutine_threadsafe(
+                            # 🔥 修改：不等待結果，直接發送取消信號
+                            asyncio.run_coroutine_threadsafe(
                                 self.current_scraper.cleanup(),
                                 self.event_loop
                             )
-                            # 等待最多 5 秒
-                            future.result(timeout=5)
+                            self.log("✅ 已發送關閉信號給 Playwright")
                         else:
                             # 事件循環已停止，創建新的循環來清理
                             new_loop = asyncio.new_event_loop()
                             asyncio.set_event_loop(new_loop)
-                            new_loop.run_until_complete(self.current_scraper.cleanup())
-                            new_loop.close()
-
-                        self.log("✅ Playwright 瀏覽器已關閉")
+                            try:
+                                new_loop.run_until_complete(
+                                    asyncio.wait_for(self.current_scraper.cleanup(), timeout=3.0)
+                                )
+                            finally:
+                                new_loop.close()
+                            self.log("✅ Playwright 瀏覽器已關閉")
                     except Exception as e:
                         self.log(f"⚠️ 清理 Scraper 時發生錯誤（已忽略）: {e}")
                     finally:
@@ -781,7 +932,6 @@ class StockAnalyzerGUI:
                 if self.current_manager:
                     self.log("🧹 正在清理 Manager 資源...")
                     try:
-                        # Manager 可能有自己的清理邏輯
                         if hasattr(self.current_manager, 'cleanup'):
                             self.current_manager.cleanup()
                     except Exception as e:
@@ -789,12 +939,15 @@ class StockAnalyzerGUI:
                     finally:
                         self.current_manager = None
 
-            # 🔥 Step 3: 取消異步任務
+            # Step 3: 取消異步任務（非遞迴）
             if self.current_task and not self.current_task.done():
                 self.log("🚫 正在取消異步任務...")
-                self.current_task.cancel()
+                try:
+                    self.current_task.cancel()
+                except Exception as e:
+                    self.log(f"⚠️ 取消任務時發生錯誤（已忽略）: {e}")
 
-            # 🔥 Step 4: 停止事件循環
+            # Step 4: 停止事件循環
             if self.event_loop and self.event_loop.is_running():
                 self.log("🔄 正在停止事件循環...")
                 try:
@@ -802,20 +955,20 @@ class StockAnalyzerGUI:
                 except Exception as e:
                     self.log(f"⚠️ 停止事件循環時發生錯誤（已忽略）: {e}")
 
-            # 🔥 Step 5: 恢復 UI 狀態
+            # 🔥 Step 5: 移除強制清理剩餘任務的邏輯
+            # 因為這會導致遞迴錯誤，改為讓事件循環自然停止
+
+            # Step 6: 恢復 UI 狀態
             self.start_btn.config(state=tk.NORMAL)
             self.stop_btn.config(state=tk.DISABLED)
             self.progress['value'] = 0
             self.progress_percent_label.config(text="0%")
-            self.update_status("爬蟲已停止")
-
-            # 🔥 Step 6: 強制更新 UI
+            self.update_status("數據自動化已停止")
             self.root.update_idletasks()
 
-            self.log("✅ 所有資源清理完成，系統已就緒")
+            self.log("✅ 資源清理完成，系統已就緒")
 
         except Exception as e:
-            # 即使發生錯誤也要確保 UI 恢復
             self.start_btn.config(state=tk.NORMAL)
             self.stop_btn.config(state=tk.DISABLED)
             self.progress['value'] = 0
@@ -823,9 +976,9 @@ class StockAnalyzerGUI:
             self.log(f"⚠️ 停止過程中發生錯誤，但UI已恢復: {e}")
 
     def run_analysis(self, stocks):
-        """執行分析的主函數 - 修復版"""
+        """執行分析的主函數"""
         try:
-            # 🔥 關鍵修復：確保舊的事件循環完全關閉
+            # 🔥 確保舊的事件循環完全關閉
             try:
                 old_loop = asyncio.get_event_loop()
                 if old_loop and not old_loop.is_closed():
@@ -836,7 +989,6 @@ class StockAnalyzerGUI:
             # 🔥 創建全新的事件循環
             self.event_loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.event_loop)
-
             print("✓ 新的事件循環已創建並設定")
 
             # 執行異步分析
@@ -846,43 +998,77 @@ class StockAnalyzerGUI:
         except asyncio.CancelledError:
             self.log("🛑 異步任務已被成功取消")
 
+        except KeyboardInterrupt:
+            self.log("🛑 用戶中斷程式（Ctrl+C）")
+            self.is_running = False
+
         except Exception as e:
             if self.is_running:
                 self.log(f"❌ 發生錯誤：{str(e)}")
                 import traceback
                 traceback.print_exc()
-                messagebox.showerror("❌ 錯誤", f"爬蟲過程中發生錯誤：\n{str(e)}")
+                messagebox.showerror("❌ 錯誤", f"數據自動化過程中發生錯誤：\n{str(e)}")
             else:
-                self.log("ℹ️ 爬蟲已被使用者停止")
+                self.log("ℹ️ 數據自動化已被使用者停止")
 
         finally:
-            # 清理資源
             self.current_task = None
             self.current_thread = None
 
-            # 🔥 確保事件循環正確關閉
+            # 🔥 優雅地清理事件循環
             if self.event_loop:
                 try:
-                    # 取消所有待處理任務
-                    pending = asyncio.all_tasks(self.event_loop)
-                    for task in pending:
-                        task.cancel()
+                    # Step 1: 取消所有待處理任務
+                    if not self.event_loop.is_closed():
+                        pending = [task for task in asyncio.all_tasks(self.event_loop)
+                                   if not task.done()]
 
-                    # 等待任務完成
-                    if pending:
-                        self.event_loop.run_until_complete(
-                            asyncio.gather(*pending, return_exceptions=True)
-                        )
+                        if pending:
+                            print(f"🧹 取消 {len(pending)} 個待處理任務...")
+                            for task in pending:
+                                try:
+                                    task.cancel()
+                                except Exception:
+                                    pass
 
-                    # 關閉事件循環
-                    self.event_loop.close()
+                            # 🔥 等待所有任務完成取消
+                            try:
+                                self.event_loop.run_until_complete(
+                                    asyncio.wait_for(
+                                        asyncio.gather(*pending, return_exceptions=True),
+                                        timeout=8.0  # 🔥 增加到 8 秒
+                                    )
+                                )
+                                print("✓ 所有任務已正確取消")
+                            except asyncio.TimeoutError:
+                                print("⚠️ 等待任務取消超時，強制繼續")
+                            except Exception as e:
+                                print(f"⚠️ 等待任務取消時發生錯誤: {e}")
+
+                    # 🔥 Step 2: 額外等待，確保 Playwright 子進程完全結束
+                    print("🧹 等待 Playwright 子進程完全結束...")
+                    import time
+                    time.sleep(1.5)  # 🔥 給 1.5 秒讓子進程清理
+                    print("✓ Playwright 子進程已結束")
+
+                    # Step 3: 停止事件循環
+                    if self.event_loop.is_running():
+                        self.event_loop.stop()
+
+                    # Step 4: 再等一下
+                    time.sleep(0.2)
+
+                    # Step 5: 關閉事件循環
+                    if not self.event_loop.is_closed():
+                        self.event_loop.close()
+
                     print("✓ 事件循環已正確關閉")
                 except Exception as e:
                     print(f"⚠️ 關閉事件循環時發生錯誤: {e}")
                 finally:
                     self.event_loop = None
 
-            # 只有在系統仍在運行時才恢復UI
+            # 恢復UI
             if self.is_running:
                 self.start_btn.config(state=tk.NORMAL)
                 self.stop_btn.config(state=tk.DISABLED)
@@ -922,7 +1108,7 @@ class StockAnalyzerGUI:
 
             # ===== 啟動訊息 =====
             self.log("🎯" + "=" * 80)
-            self.log("🚀 股票爬蟲系統啟動")
+            self.log("🚀 系統啟動中")
             self.log(f"📊 輸入股票：{', '.join(stocks)}")
 
             templates_info = []
@@ -981,7 +1167,7 @@ class StockAnalyzerGUI:
 
             if not valid_stocks:
                 self.log("❌ 沒有找到任何有效的股票代碼")
-                self.update_status("爬蟲失敗：無有效股票代碼")
+                self.update_status("失敗：無有效股票代碼")
                 return
 
             self.log(f"✅ 有效股票：{', '.join(valid_stocks)}")
@@ -1023,8 +1209,8 @@ class StockAnalyzerGUI:
                 self.log("=" * 80)
 
                 # 初始化系統
-                self.update_status("初始化股票分析系統")
-                self.log("🔧 初始化爬蟲系統...")
+                self.update_status("設定基本面模板分析系統")
+                self.log("🔧 設定系統中...")
 
                 scraper = StockScraper(stocks=stocks_dict, config=self.config, max_concurrent=3)
                 processor = StockProcess(max_concurrent=2)
@@ -1034,7 +1220,7 @@ class StockAnalyzerGUI:
                 self.current_scraper = scraper
                 self.current_manager = manager
 
-                self.log("✅ 爬蟲系統初始化完成")
+                self.log("✅ 系統設定完成")
 
                 # 初始化 Excel
                 check_if_stopped()
@@ -1142,8 +1328,8 @@ class StockAnalyzerGUI:
 
                 # 如果股票分析沒執行,需要創建 manager
                 if not do_stock_analysis:
-                    self.update_status("初始化選擇權分析系統")
-                    self.log("🔧 正在初始化選擇權爬蟲系統...")
+                    self.update_status("設定選擇權分析系統")
+                    self.log("🔧 正在設定選擇權分析系統...")
 
                     scraper = StockScraper(stocks=stocks_dict, config=self.config, max_concurrent=3)
                     processor = StockProcess(max_concurrent=2)
@@ -1154,23 +1340,23 @@ class StockAnalyzerGUI:
                     self.current_scraper = scraper
                     self.current_manager = manager
 
-                    self.log("✅ 選擇權爬蟲系統初始化完成")
+                    self.log("✅ 選擇權系統設定完成")
 
                 # 初始化選擇權 Excel
                 current_step += 1
                 step_num = f"{current_step}/{total_steps}"
-                self.update_progress(current_step, total_steps, "[選擇權] 初始化 Excel 檔案")
-                self.log(f"\n📄 步驟 {step_num}:[選擇權] 正在初始化 Excel 檔案...")
+                self.update_progress(current_step, total_steps, "[選擇權] 設定 Excel 檔案")
+                self.log(f"\n📄 步驟 {step_num}:[選擇權] 正在設定 Excel 檔案...")
 
                 try:
                     success = await manager.initialize_option_excel_files()
                     if not success:
-                        self.log("⚠️ 選擇權 Excel 檔案初始化失敗")
+                        self.log("⚠️ 選擇權 Excel 檔案設定失敗")
                         if do_stock_analysis:
                             self.log("⚠️ 股票分析已完成,將跳過選擇權分析")
                         else:
-                            self.log("❌ 選擇權分析失敗,停止爬蟲")
-                            self.update_status("爬蟲失敗:選擇權 Excel 初始化錯誤")
+                            self.log("❌ 選擇權分析失敗,停止")
+                            self.update_status("失敗:選擇權 Excel 初始化錯誤")
                             return
                     else:
                         self.log("✅ 選擇權 Excel 檔案初始化完成")
@@ -1233,20 +1419,20 @@ class StockAnalyzerGUI:
                     if do_stock_analysis:
                         self.log("⚠️ 股票分析已完成,將繼續完成流程")
                     else:
-                        self.log("❌ 選擇權分析失敗,停止爬蟲")
+                        self.log("❌ 選擇權分析失敗,停止")
                         raise e
 
                 self.log("🎯" + "=" * 80)
 
             # 完成
-            self.update_progress(total_steps, total_steps, "爬蟲完成！")
+            self.update_progress(total_steps, total_steps, "完成！")
 
             end_time = time.time()
             execution_time = end_time - start_time
 
             # 🔥 簡潔的完成訊息
             self.log("\n" + "🎉" + "=" * 80)
-            self.log("🎊 股票爬蟲完成！")
+            self.log("🎊 股票數據自動化完成！")
             self.log(f"⏱️  執行時間：{execution_time:.2f} 秒")
             self.log(f"📊 處理股票：{len(stocks_dict['final_stocks'])} 支")
 
@@ -1263,10 +1449,10 @@ class StockAnalyzerGUI:
             self.log(f"📁 保存位置：{self.output_folder_var.get()}")
             self.log("🎉" + "=" * 80)
 
-            self.update_status("爬蟲完成！")
+            self.update_status("完成！")
 
             # 顯示完成對話框
-            completion_msg = f"股票爬蟲已成功完成！\n\n"
+            completion_msg = f"股票數據自動化已成功完成！\n\n"
             completion_msg += f"📊 處理股票：{len(stocks_dict['final_stocks'])} 支\n"
 
             if do_stock_analysis:
@@ -1279,42 +1465,53 @@ class StockAnalyzerGUI:
             completion_msg += f"⏱️  執行時間：{execution_time:.1f} 秒\n"
             completion_msg += f"💾 保存檔案：{len(saved_stock_files) + len(saved_option_files)} 個"
 
-            messagebox.showinfo("🎉 爬蟲完成", completion_msg)
+            messagebox.showinfo("🎉 完成", completion_msg)
 
         except asyncio.CancelledError:
-            self.log("🛑 爬蟲任務已被使用者取消")
-            self.update_status("爬蟲已停止")
+            self.log("🛑 數據自動化任務已被使用者取消")
+            self.update_status("數據自動化已停止")
             raise
 
         except Exception as e:
             self.reset_progress()
             error_msg = f"系統錯誤：{str(e)}"
             self.log(f"❌ {error_msg}")
-            self.update_status("爬蟲失敗")
-            messagebox.showerror("❌ 錯誤", f"爬蟲過程中發生錯誤：\n{str(e)}")
+            self.update_status("數據自動化失敗")
+            messagebox.showerror("❌ 錯誤", f"數據自動化過程中發生錯誤：\n{str(e)}")
             raise e
 
         finally:
-            # 清理資源
+            # 🔥 優雅地清理資源
             self.log("🧹 開始最終清理...")
 
-            try:
-                if scraper and scraper == self.current_scraper:
-                    self.log("🧹 清理 Scraper 資源...")
-                    await scraper.cleanup()
-                    self.current_scraper = None
-                    self.log("✅ Scraper 清理完成")
+            cleanup_tasks = []
 
-                if manager and manager == self.current_manager:
-                    self.log("🧹 清理 Manager 資源...")
-                    if hasattr(manager, 'cleanup'):
-                        manager.cleanup()
-                    self.current_manager = None
-                    self.log("✅ Manager 清理完成")
+            # 清理 Scraper
+            if scraper and scraper == self.current_scraper:
+                self.log("🧹 清理 Scraper 資源...")
+                cleanup_tasks.append(scraper.cleanup())
 
-            except Exception as e:
-                self.log(f"⚠️ 最終清理時發生錯誤（已忽略）: {e}")
+            # 清理 Manager
+            if manager and manager == self.current_manager:
+                self.log("🧹 清理 Manager 資源...")
+                if hasattr(manager, 'cleanup') and asyncio.iscoroutinefunction(manager.cleanup):
+                    cleanup_tasks.append(manager.cleanup())
 
+            # 🔥 等待所有清理任務完成（增加超時）
+            if cleanup_tasks:
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(*cleanup_tasks, return_exceptions=True),
+                        timeout=10.0  # 🔥 增加到 10 秒
+                    )
+                    self.log("✅ 所有資源已正確清理")
+                except asyncio.TimeoutError:
+                    self.log("⚠️ 清理超時（已等待 10 秒），強制繼續")
+                except Exception as e:
+                    self.log(f"⚠️ 清理時發生錯誤（已忽略）: {e}")
+
+            self.current_scraper = None
+            self.current_manager = None
             self.log("✅ 最終清理完成")
 
     def run(self):
