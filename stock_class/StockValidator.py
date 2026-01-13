@@ -160,6 +160,7 @@ class StockValidator:
             else:
                 details['exchangeName'] = 'NYSE'  # 預設值
 
+            print(details)
             # 🔥 步驟 3: 根據 country 判斷類型
             if country == 'United States':
                 return 'US', details

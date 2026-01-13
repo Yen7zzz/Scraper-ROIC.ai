@@ -1,39 +1,79 @@
-# 🔥 關鍵修復：必須在所有 import 之前設定事件循環策略
+# 🔥 完整的瀏覽器路徑偵測邏輯
+# 複製此函數替換 StockScraper.py 中的 setup_playwright_path()
+
 import sys
 import os
 
-# Windows 特定修復：使用 Selector 事件循環
-if sys.platform == 'win32':
-    import asyncio
 
-    # 強制使用 ProactorEventLoop（比 SelectorEventLoop 更穩定）
-    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-    print("✓ 已設定 Windows ProactorEventLoop 策略")
-
-
-# 設定 Playwright 路徑
 def setup_playwright_path():
-    """設定 Playwright 瀏覽器路徑"""
-    if hasattr(sys, '_MEIPASS'):
-        base_path = sys._MEIPASS
-        browser_path = os.path.join(base_path, 'ms-playwright')
-        if os.path.exists(browser_path):
-            os.environ['PLAYWRIGHT_BROWSERS_PATH'] = browser_path
-            print(f"設定瀏覽器路徑: {browser_path}")
-        else:
-            original_path = r'C:\Users\2993\AppData\Local\ms-playwright'
-            if os.path.exists(original_path):
-                os.environ['PLAYWRIGHT_BROWSERS_PATH'] = original_path
-                print(f"使用原始瀏覽器路徑: {original_path}")
+    """
+    設定 Playwright 瀏覽器路徑
+
+    偵測優先順序：
+    1. 打包後的相對路徑（與 .exe 同層的 ms-playwright）
+    2. PyInstaller 的臨時資料夾（_MEIPASS）
+    3. 開發環境的 AppData 路徑
+    """
+
+    # 🔥 方法 1：檢查是否在打包環境中（最優先）
+    if getattr(sys, 'frozen', False):
+        # 打包後的路徑（.exe 所在目錄）
+        base_path = os.path.dirname(sys.executable)
+
+        # 檢查與 .exe 同層的 ms-playwright 資料夾
+        relative_browser_path = os.path.join(base_path, 'ms-playwright')
+
+        if os.path.exists(relative_browser_path):
+            os.environ['PLAYWRIGHT_BROWSERS_PATH'] = relative_browser_path
+            print(f"✓ 使用打包的瀏覽器: {relative_browser_path}")
+
+            # 驗證 Chromium 是否存在
+            chromium_path = os.path.join(relative_browser_path, 'chromium-1187', 'chrome-win', 'chrome.exe')
+            if os.path.exists(chromium_path):
+                print(f"✓ Chromium 驗證通過: {chromium_path}")
+            else:
+                print(f"⚠️ 警告：Chromium 執行檔不存在於預期位置")
+                print(f"   預期位置: {chromium_path}")
+
+            return
+
+        # 🔥 方法 2：檢查 PyInstaller 的臨時解壓縮資料夾
+        if hasattr(sys, '_MEIPASS'):
+            meipass_browser_path = os.path.join(sys._MEIPASS, 'ms-playwright')
+
+            if os.path.exists(meipass_browser_path):
+                os.environ['PLAYWRIGHT_BROWSERS_PATH'] = meipass_browser_path
+                print(f"✓ 使用 _MEIPASS 瀏覽器: {meipass_browser_path}")
+                return
+
+        # 如果打包環境找不到，警告使用者
+        print("⚠️ 警告：打包環境中找不到 ms-playwright 資料夾")
+        print("   程式可能無法正常運行，請確認以下路徑是否存在：")
+        print(f"   1. {relative_browser_path}")
+
+    # 🔥 方法 3：開發環境的 AppData 路徑（僅供開發時使用）
     else:
-        original_path = r'C:\Users\2993\AppData\Local\ms-playwright'
-        if os.path.exists(original_path):
-            os.environ['PLAYWRIGHT_BROWSERS_PATH'] = original_path
+        appdata_browser_path = os.path.join(
+            os.path.expanduser('~'),
+            'AppData',
+            'Local',
+            'ms-playwright'
+        )
+
+        if os.path.exists(appdata_browser_path):
+            os.environ['PLAYWRIGHT_BROWSERS_PATH'] = appdata_browser_path
+            print(f"✓ 開發環境：使用 AppData 瀏覽器")
+            print(f"   路徑: {appdata_browser_path}")
+        else:
+            print("⚠️ 警告：未找到 Playwright 瀏覽器")
+            print("   請執行：playwright install chromium")
 
 
+# 在模組載入時立即設定
 setup_playwright_path()
 
 # 現在才導入 playwright 和其他模組
+import asyncio
 import pandas as pd
 import random
 from io import StringIO
@@ -218,97 +258,65 @@ class StockScraper:
             print("✅ 瀏覽器啟動成功（視窗已置中）")
 
     async def cleanup(self):
-        """清理資源 - 強化版，確保完全關閉所有連線，防止記憶體洩漏"""
+        """清理資源 - 確保 Playwright 子進程完全關閉"""
         import asyncio
 
-        cleanup_errors = []
+        print("🧹 開始清理 StockScraper 資源...")
 
         try:
-            # 🔥 Step 1: 關閉所有追蹤的 contexts
+            # Step 1: 關閉所有 contexts
             if hasattr(self, 'contexts') and self.contexts:
                 print(f"🧹 關閉 {len(self.contexts)} 個未關閉的 context...")
-                contexts_to_close = list(self.contexts)  # 複製列表避免併發修改
+                contexts_to_close = list(self.contexts)
 
                 for context in contexts_to_close:
                     try:
                         await asyncio.wait_for(context.close(), timeout=2.0)
-                    except asyncio.TimeoutError:
-                        print(f"⚠️ Context 關閉超時（已強制繼續）")
                     except Exception as e:
-                        cleanup_errors.append(f"Context: {e}")
+                        print(f"⚠️ Context 關閉錯誤: {e}")
 
                 self.contexts.clear()
                 print("✅ 所有 context 已關閉")
 
-            # 🔥 Step 2: 關閉瀏覽器
+            # Step 2: 關閉瀏覽器
             if self.browser:
                 print("🧹 關閉 Playwright 瀏覽器...")
                 try:
-                    # 設定 3 秒超時
                     await asyncio.wait_for(self.browser.close(), timeout=3.0)
                     print("✅ 瀏覽器已關閉")
-                except asyncio.TimeoutError:
-                    print("⚠️ 瀏覽器關閉超時，強制繼續...")
                 except Exception as e:
-                    cleanup_errors.append(f"Browser: {e}")
                     print(f"⚠️ 瀏覽器關閉錯誤: {e}")
                 finally:
                     self.browser = None
 
-            # 🔥 Step 3: 停止 Playwright
+            # Step 3: 停止 Playwright
             if self.playwright:
                 print("🧹 停止 Playwright...")
                 try:
-                    # 設定 3 秒超時
                     await asyncio.wait_for(self.playwright.stop(), timeout=3.0)
                     print("✅ Playwright 已停止")
-                except asyncio.TimeoutError:
-                    print("⚠️ Playwright 停止超時，強制繼續...")
                 except Exception as e:
-                    cleanup_errors.append(f"Playwright: {e}")
                     print(f"⚠️ Playwright 停止錯誤: {e}")
                 finally:
                     self.playwright = None
 
-            # 🔥 Step 3.5: 清理 Schwab Client（新增）
+            # 🔥 Step 4: 關鍵！等待子進程完全結束
+            print("🧹 等待子進程完全結束...")
+            await asyncio.sleep(1.0)  # 給 1 秒讓子進程清理
+            print("✅ 子進程清理完成")
+
+            # Step 5: 清理 Schwab Client
             if self.schwab_client:
-                print("🧹 清理 Schwab Client...")
-                try:
-                    # Schwab Client 沒有異步清理方法，直接設為 None
-                    self.schwab_client = None
-                    print("✅ Schwab Client 已清理")
-                except Exception as e:
-                    cleanup_errors.append(f"Schwab Client: {e}")
-                    print(f"⚠️ Schwab Client 清理錯誤: {e}")
+                self.schwab_client = None
 
-            # 🔥 Step 4: 等待後台任務完成（增加等待時間）
-            await asyncio.sleep(0.5)
-
-            # 🔥 Step 5: 強制清理剩餘任務
-            try:
-                pending_tasks = [task for task in asyncio.all_tasks()
-                                 if not task.done() and task != asyncio.current_task()]
-                if pending_tasks:
-                    print(f"🧹 取消 {len(pending_tasks)} 個待處理任務...")
-                    for task in pending_tasks:
-                        task.cancel()
-                    # 等待所有任務被取消
-                    await asyncio.gather(*pending_tasks, return_exceptions=True)
-                    print("✅ 待處理任務已清理")
-            except Exception as e:
-                cleanup_errors.append(f"Tasks: {e}")
-
-            if cleanup_errors:
-                print(f"⚠️ 清理過程中有 {len(cleanup_errors)} 個錯誤（已忽略）")
-            else:
-                print("✅ 資源清理完全成功，無記憶體洩漏")
+            print("✅ StockScraper 資源清理完成")
 
         except Exception as e:
-            print(f"❌ 清理過程發生嚴重錯誤: {e}")
-            # 即使發生錯誤，也要確保變數被重置
+            print(f"❌ 清理過程發生錯誤: {e}")
+            # 確保變數被重置
             self.browser = None
             self.playwright = None
-            self.schwab_client = None  # 🔥 新增
+            self.schwab_client = None
             if hasattr(self, 'contexts'):
                 self.contexts.clear()
 
