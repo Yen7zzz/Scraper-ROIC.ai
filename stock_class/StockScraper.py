@@ -34,18 +34,12 @@ def setup_playwright_path():
 setup_playwright_path()
 
 # 現在才導入 playwright 和其他模組
-from playwright.async_api import async_playwright
-import base64
-import io
 import pandas as pd
 import random
 from io import StringIO
-from openpyxl import load_workbook
 from bs4 import BeautifulSoup
-import aiohttp
 import json
 import re
-import yfinance as yf
 import schwabdev
 
 # 自定義異常類別
@@ -495,115 +489,115 @@ class StockScraper:
     #         except Exception as e:
     #             return {"stock": stock, "error": str(e)}
 
-    async def get_EPS_PE_MarketCap(self, stock, page, retries=3):
-        """抓取特定股票的EPS/PE/MarketCap數據 - 2025新版HTML結構"""
-        url = f'https://www.roic.ai/quote/{stock}'
-        attempt = 0
-
-        while attempt < retries:
-            try:
-                await asyncio.sleep(random.uniform(1, 3))
-                await page.goto(url, wait_until='load', timeout=30000)
-
-                # 等待關鍵指標容器載入
-                await page.wait_for_selector('div[data-cy="company_header_ratios"]', timeout=30000)
-
-                content = await page.content()
-                soup = BeautifulSoup(content, 'html.parser')
-
-                # 🔥 修正：使用新的HTML結構
-                ratios_container = soup.find('div', {'data-cy': 'company_header_ratios'})
-
-                if ratios_container:
-                    print(f"找到 {stock} 的指標容器")
-
-                    # 提取所有指標項目
-                    metric_items = ratios_container.find_all('div', class_='shrink-0 flex-col')
-
-                    if len(metric_items) >= 3:
-                        dic_data = {}
-
-                        for item in metric_items:
-                            # 🔥 關鍵修正：適應新舊兩種class順序
-                            # 新版: class="text-foreground flex text-lg"
-                            # 舊版: class="flex text-lg text-foreground"
-                            value_span = item.find('span', class_='text-foreground')
-
-                            # 確保是大字（text-lg）
-                            if value_span and 'text-lg' in value_span.get('class', []):
-                                label_span = item.find('span', class_='text-muted-foreground')
-
-                                # 確保是小字（text-sm uppercase）
-                                if label_span and 'text-sm' in label_span.get('class',
-                                                                              []) and 'uppercase' in label_span.get(
-                                        'class', []):
-                                    label = label_span.get_text(strip=True)
-                                    value_text = value_span.get_text(strip=True)
-
-                                    # 根據標籤類型進行不同處理
-                                    if label in ['EPS', 'P/E']:
-                                        try:
-                                            dic_data[label] = float(value_text)
-                                        except ValueError:
-                                            dic_data[label] = value_text
-                                    else:
-                                        # Market Cap, Next Earn等保持字串
-                                        dic_data[label] = value_text
-
-                        if dic_data:
-                            print(f"成功提取 {stock} 的指標數據: {dic_data}")
-                            return dic_data
-                        else:
-                            print(f"⚠️ 解析後沒有有效數據")
-                    else:
-                        print(f"⚠️ 指標項目數量不足: 找到 {len(metric_items)} 個項目")
-
-                # 🔥 備用方案 2：直接搜尋所有符合條件的 span
-                if not ratios_container or not dic_data:
-                    print(f"嘗試備用方案抓取 {stock} 的指標...")
-
-                    # 找出所有可能的數值 span
-                    value_spans = soup.find_all('span', class_='text-foreground')
-                    label_spans = soup.find_all('span', class_='text-muted-foreground')
-
-                    # 過濾出正確的元素（必須包含 text-lg 和 text-sm）
-                    filtered_values = [s for s in value_spans if 'text-lg' in s.get('class', [])]
-                    filtered_labels = [s for s in label_spans if
-                                       'text-sm' in s.get('class', []) and 'uppercase' in s.get('class', [])]
-
-                    if len(filtered_values) >= 3 and len(filtered_labels) >= 3:
-                        dic_data = {}
-
-                        for i in range(min(len(filtered_values), len(filtered_labels))):
-                            label = filtered_labels[i].get_text(strip=True)
-                            value_text = filtered_values[i].get_text(strip=True)
-
-                            # 只處理我們關心的指標
-                            if label in ['EPS', 'P/E', 'MARKET CAP', 'Market Cap', 'NEXT EARN', 'Next Earn']:
-                                if label in ['EPS', 'P/E']:
-                                    try:
-                                        dic_data[label] = float(value_text)
-                                    except ValueError:
-                                        dic_data[label] = value_text
-                                else:
-                                    dic_data[label] = value_text
-
-                        if dic_data:
-                            print(f"備用方案成功提取 {stock} 的指標數據: {dic_data}")
-                            return dic_data
-
-                # 如果所有方法都失敗
-                return {'error': f'無法找到 {stock} 的指標數據'}
-
-            except Exception as e:
-                attempt += 1
-                print(f"第 {attempt} 次嘗試失敗: {e}")
-                if attempt < retries:
-                    await asyncio.sleep(random.uniform(2, 5))
-                else:
-                    return {'error': f'抓取 {stock} 數據時發生錯誤: {e}'}
-
-        return {'error': f'Failed to retrieve data for {stock}'}
+    # async def get_EPS_PE_MarketCap(self, stock, page, retries=3):
+    #     """抓取特定股票的EPS/PE/MarketCap數據 - 2025新版HTML結構"""
+    #     url = f'https://www.roic.ai/quote/{stock}'
+    #     attempt = 0
+    #
+    #     while attempt < retries:
+    #         try:
+    #             await asyncio.sleep(random.uniform(1, 3))
+    #             await page.goto(url, wait_until='load', timeout=30000)
+    #
+    #             # 等待關鍵指標容器載入
+    #             await page.wait_for_selector('div[data-cy="company_header_ratios"]', timeout=30000)
+    #
+    #             content = await page.content()
+    #             soup = BeautifulSoup(content, 'html.parser')
+    #
+    #             # 🔥 修正：使用新的HTML結構
+    #             ratios_container = soup.find('div', {'data-cy': 'company_header_ratios'})
+    #
+    #             if ratios_container:
+    #                 print(f"找到 {stock} 的指標容器")
+    #
+    #                 # 提取所有指標項目
+    #                 metric_items = ratios_container.find_all('div', class_='shrink-0 flex-col')
+    #
+    #                 if len(metric_items) >= 3:
+    #                     dic_data = {}
+    #
+    #                     for item in metric_items:
+    #                         # 🔥 關鍵修正：適應新舊兩種class順序
+    #                         # 新版: class="text-foreground flex text-lg"
+    #                         # 舊版: class="flex text-lg text-foreground"
+    #                         value_span = item.find('span', class_='text-foreground')
+    #
+    #                         # 確保是大字（text-lg）
+    #                         if value_span and 'text-lg' in value_span.get('class', []):
+    #                             label_span = item.find('span', class_='text-muted-foreground')
+    #
+    #                             # 確保是小字（text-sm uppercase）
+    #                             if label_span and 'text-sm' in label_span.get('class',
+    #                                                                           []) and 'uppercase' in label_span.get(
+    #                                     'class', []):
+    #                                 label = label_span.get_text(strip=True)
+    #                                 value_text = value_span.get_text(strip=True)
+    #
+    #                                 # 根據標籤類型進行不同處理
+    #                                 if label in ['EPS', 'P/E']:
+    #                                     try:
+    #                                         dic_data[label] = float(value_text)
+    #                                     except ValueError:
+    #                                         dic_data[label] = value_text
+    #                                 else:
+    #                                     # Market Cap, Next Earn等保持字串
+    #                                     dic_data[label] = value_text
+    #
+    #                     if dic_data:
+    #                         print(f"成功提取 {stock} 的指標數據: {dic_data}")
+    #                         return dic_data
+    #                     else:
+    #                         print(f"⚠️ 解析後沒有有效數據")
+    #                 else:
+    #                     print(f"⚠️ 指標項目數量不足: 找到 {len(metric_items)} 個項目")
+    #
+    #             # 🔥 備用方案 2：直接搜尋所有符合條件的 span
+    #             if not ratios_container or not dic_data:
+    #                 print(f"嘗試備用方案抓取 {stock} 的指標...")
+    #
+    #                 # 找出所有可能的數值 span
+    #                 value_spans = soup.find_all('span', class_='text-foreground')
+    #                 label_spans = soup.find_all('span', class_='text-muted-foreground')
+    #
+    #                 # 過濾出正確的元素（必須包含 text-lg 和 text-sm）
+    #                 filtered_values = [s for s in value_spans if 'text-lg' in s.get('class', [])]
+    #                 filtered_labels = [s for s in label_spans if
+    #                                    'text-sm' in s.get('class', []) and 'uppercase' in s.get('class', [])]
+    #
+    #                 if len(filtered_values) >= 3 and len(filtered_labels) >= 3:
+    #                     dic_data = {}
+    #
+    #                     for i in range(min(len(filtered_values), len(filtered_labels))):
+    #                         label = filtered_labels[i].get_text(strip=True)
+    #                         value_text = filtered_values[i].get_text(strip=True)
+    #
+    #                         # 只處理我們關心的指標
+    #                         if label in ['EPS', 'P/E', 'MARKET CAP', 'Market Cap', 'NEXT EARN', 'Next Earn']:
+    #                             if label in ['EPS', 'P/E']:
+    #                                 try:
+    #                                     dic_data[label] = float(value_text)
+    #                                 except ValueError:
+    #                                     dic_data[label] = value_text
+    #                             else:
+    #                                 dic_data[label] = value_text
+    #
+    #                     if dic_data:
+    #                         print(f"備用方案成功提取 {stock} 的指標數據: {dic_data}")
+    #                         return dic_data
+    #
+    #             # 如果所有方法都失敗
+    #             return {'error': f'無法找到 {stock} 的指標數據'}
+    #
+    #         except Exception as e:
+    #             attempt += 1
+    #             print(f"第 {attempt} 次嘗試失敗: {e}")
+    #             if attempt < retries:
+    #                 await asyncio.sleep(random.uniform(2, 5))
+    #             else:
+    #                 return {'error': f'抓取 {stock} 數據時發生錯誤: {e}'}
+    #
+    #     return {'error': f'Failed to retrieve data for {stock}'}
 
     async def fetch_combined_summary_and_metrics_data(self, stock, semaphore):
         """同時抓取Summary表格數據和EPS/PE/MarketCap指標數據"""
@@ -2499,11 +2493,11 @@ class StockScraper:
         """
         從 earningshub.com 爬取財報日期
 
-        目標元素：
-        <span class="MuiTypography-root MuiTypography-caption css-c3laax">
-            2026年3月20日 週五 下午9:00
-            <span class="MuiBox-root css-6z24ho">ESTIMATE</span>
-        </span>
+        正確結構：
+        <div class="MuiStack-root css-3a3hw0">
+            <p>Q1 2026 Earnings in 66 Days</p>
+            <span class="MuiTypography-caption css-c3laax">2026年3月20日 週五 下午9:00</span>
+        </div>
 
         Returns:
             dict: {'earnings_date': '2026年3月20日 週五 下午9:00', 'status': 'ESTIMATE'}
@@ -2511,8 +2505,8 @@ class StockScraper:
         from bs4 import BeautifulSoup
         import random
 
-        # 🔥 關鍵修正 1: 股票代碼轉換（與其他方法一致）
-        original_stock = stock  # 保存原始代碼用於日誌
+        # 股票代碼轉換
+        original_stock = stock
         if '-' in stock:
             stock = ''.join(['.' if char == '-' else char for char in stock])
             print(f"   股票代碼轉換: {original_stock} → {stock}")
@@ -2528,7 +2522,7 @@ class StockScraper:
                 await asyncio.sleep(random.uniform(2, 4))
 
                 # 前往頁面
-                await page.goto(URL, wait_until='domcontentloaded', timeout=30000)
+                await page.goto(URL, wait_until='domcontentloaded', timeout=60000)
 
                 # 模擬人類瀏覽行為
                 await asyncio.sleep(random.uniform(1, 2))
@@ -2537,7 +2531,7 @@ class StockScraper:
 
                 # 等待關鍵元素載入
                 try:
-                    await page.wait_for_selector('span.MuiTypography-caption', timeout=10000)
+                    await page.wait_for_selector('div.MuiStack-root', timeout=10000)
                     await asyncio.sleep(2)
                 except Exception:
                     print(f"   等待元素超時，繼續嘗試解析...")
@@ -2546,46 +2540,35 @@ class StockScraper:
                 content = await page.content()
                 soup = BeautifulSoup(content, 'html.parser')
 
-                # 🔥 方法 1: 尋找包含 css-c3laax 的元素
-                target_element = soup.find('span', class_='MuiTypography-caption css-c3laax')
+                # 🔥 方法 1: 尋找包含正確格式的財報容器
+                stack_containers = soup.find_all('div', class_='MuiStack-root')
 
-                if target_element:
-                    # 找到內部的 ESTIMATE/CONFIRMED 標籤
-                    inner_box = target_element.find('span', class_='MuiBox-root')
+                for container in stack_containers:
+                    container_text = container.get_text()
 
-                    if inner_box:
-                        status_text = inner_box.get_text(strip=True)
+                    # 🔥 關鍵驗證：
+                    # 1. 必須包含 "Earnings in" 和 "Days"
+                    # 2. 必須包含季度標記 (Q1, Q2, Q3, Q4)
+                    # 3. 不能包含 "quarters"（這是歷史數據）
+                    has_earnings = 'Earnings in' in container_text and 'Days' in container_text
+                    has_quarter = any(q in container_text for q in ['Q1 ', 'Q2 ', 'Q3 ', 'Q4 '])
+                    is_historical = 'quarters' in container_text.lower()
 
-                        # 提取日期文字（移除內部的 status box）
-                        date_text = target_element.get_text(strip=True)
-                        date_text = date_text.replace(status_text, '').strip()
+                    if has_earnings and has_quarter and not is_historical:
+                        print(f"   ✓ 找到財報容器: {container_text[:50]}...")
 
-                        print(f"✓ 找到 {original_stock} 的財報日期: {date_text} ({status_text})")
+                        # 在這個容器內尋找日期 span
+                        date_span = container.find('span', class_='MuiTypography-caption')
 
-                        return {
-                            'earnings_date': date_text,
-                            'status': status_text,
-                            'source': 'earningshub'
-                        }
+                        if date_span:
+                            # 檢查是否有 ESTIMATE/CONFIRMED 標籤
+                            inner_box = date_span.find('span', class_='MuiBox-root')
 
-                # 🔥 方法 2: 備用方案 - 遍歷所有 MuiTypography-caption
-                target_spans = soup.find_all('span', class_='MuiTypography-caption')
+                            if inner_box:
+                                # 有標籤（例如 ESTIMATE）
+                                status_text = inner_box.get_text(strip=True)
+                                date_text = date_span.get_text(strip=True).replace(status_text, '').strip()
 
-                for span in target_spans:
-                    # 檢查是否包含 ESTIMATE 或 CONFIRMED 標籤
-                    inner_box = span.find('span', class_='MuiBox-root')
-
-                    if inner_box:
-                        status_text = inner_box.get_text(strip=True)
-
-                        # 只處理 ESTIMATE 或 CONFIRMED
-                        if status_text in ['ESTIMATE', 'CONFIRMED']:
-                            # 提取日期文字
-                            date_text = span.get_text(strip=True)
-                            date_text = date_text.replace(status_text, '').strip()
-
-                            # 驗證日期格式（應該包含年月日）
-                            if '年' in date_text and '月' in date_text and '日' in date_text:
                                 print(f"✓ 找到 {original_stock} 的財報日期: {date_text} ({status_text})")
 
                                 return {
@@ -2593,19 +2576,112 @@ class StockScraper:
                                     'status': status_text,
                                     'source': 'earningshub'
                                 }
+                            else:
+                                # 沒有標籤（已確認日期）
+                                date_text = date_span.get_text(strip=True)
 
-                # 🔥 關鍵修正 2: 如果找不到，記錄並跳出循環（不要無限重試）
+                                # 驗證是否為有效日期
+                                if '年' in date_text and '月' in date_text and '日' in date_text:
+                                    print(f"✓ 找到 {original_stock} 的財報日期: {date_text} (CONFIRMED)")
+
+                                    return {
+                                        'earnings_date': date_text,
+                                        'status': 'CONFIRMED',
+                                        'source': 'earningshub'
+                                    }
+
+                # 🔥 方法 2: 備用方案 - 尋找 css-3a3hw0 類別
+                backup_container = soup.find('div', class_='css-3a3hw0')
+
+                if backup_container:
+                    container_text = backup_container.get_text()
+
+                    # 同樣的驗證邏輯
+                    has_earnings = 'Earnings in' in container_text and 'Days' in container_text
+                    has_quarter = any(q in container_text for q in ['Q1 ', 'Q2 ', 'Q3 ', 'Q4 '])
+                    is_historical = 'quarters' in container_text.lower()
+
+                    if has_earnings and has_quarter and not is_historical:
+                        print(f"   ✓ 使用備用容器 (css-3a3hw0)")
+
+                        date_span = backup_container.find('span', class_='MuiTypography-caption')
+
+                        if date_span:
+                            inner_box = date_span.find('span', class_='MuiBox-root')
+
+                            if inner_box:
+                                status_text = inner_box.get_text(strip=True)
+                                date_text = date_span.get_text(strip=True).replace(status_text, '').strip()
+
+                                print(f"✓ 找到 {original_stock} 的財報日期: {date_text} ({status_text})")
+
+                                return {
+                                    'earnings_date': date_text,
+                                    'status': status_text,
+                                    'source': 'earningshub'
+                                }
+                            else:
+                                date_text = date_span.get_text(strip=True)
+
+                                if '年' in date_text and '月' in date_text and '日' in date_text:
+                                    print(f"✓ 找到 {original_stock} 的財報日期: {date_text} (CONFIRMED)")
+
+                                    return {
+                                        'earnings_date': date_text,
+                                        'status': 'CONFIRMED',
+                                        'source': 'earningshub'
+                                    }
+
+                # 🔥 方法 3: 最終備用方案
+                all_date_candidates = soup.find_all('span', class_='MuiTypography-caption css-c3laax')
+
+                for candidate in all_date_candidates:
+                    # 檢查父元素
+                    parent = candidate.find_parent('div', class_='MuiStack-root')
+
+                    if parent:
+                        parent_text = parent.get_text()
+
+                        # 同樣的驗證
+                        has_earnings = 'Earnings in' in parent_text and 'Days' in parent_text
+                        has_quarter = any(q in parent_text for q in ['Q1 ', 'Q2 ', 'Q3 ', 'Q4 '])
+                        is_historical = 'quarters' in parent_text.lower()
+
+                        if has_earnings and has_quarter and not is_historical:
+                            inner_box = candidate.find('span', class_='MuiBox-root')
+
+                            if inner_box:
+                                status_text = inner_box.get_text(strip=True)
+                                date_text = candidate.get_text(strip=True).replace(status_text, '').strip()
+
+                                print(f"✓ 找到 {original_stock} 的財報日期: {date_text} ({status_text})")
+
+                                return {
+                                    'earnings_date': date_text,
+                                    'status': status_text,
+                                    'source': 'earningshub'
+                                }
+                            else:
+                                date_text = candidate.get_text(strip=True)
+
+                                if '年' in date_text and '月' in date_text and '日' in date_text:
+                                    print(f"✓ 找到 {original_stock} 的財報日期: {date_text} (CONFIRMED)")
+
+                                    return {
+                                        'earnings_date': date_text,
+                                        'status': 'CONFIRMED',
+                                        'source': 'earningshub'
+                                    }
+
+                # 如果所有方法都失敗
                 print(f"⚠️ 未找到 {original_stock} 的財報日期元素")
-
-                # 增加重試計數
                 attempt += 1
 
-                # 🔥 關鍵修正 3: 如果是最後一次嘗試，直接返回 None
                 if attempt >= retries:
                     print(f"❌ {original_stock} 在 {retries} 次嘗試後仍無法獲取財報日期")
                     return None
 
-                # 如果還有重試機會，等待後繼續
+                # 等待後重試
                 wait_time = random.uniform(5, 10)
                 print(f"   等待 {wait_time:.1f} 秒後重試...")
                 await asyncio.sleep(wait_time)
@@ -2614,86 +2690,16 @@ class StockScraper:
                 attempt += 1
                 print(f"第 {attempt} 次嘗試失敗: {e}")
 
-                # 🔥 關鍵修正 4: 確保重試次數達到上限時返回 None
                 if attempt >= retries:
                     print(f"❌ Failed to retrieve earnings date for {original_stock} after {retries} attempts")
                     return None
 
-                # 等待後繼續
                 wait_time = random.uniform(5, 10)
                 print(f"等待 {wait_time:.1f} 秒後重試...")
                 await asyncio.sleep(wait_time)
 
-        # 🔥 關鍵修正 5: 確保函數最後一定返回 None（避免無限循環）
         print(f"❌ {original_stock} 無法獲取財報日期")
         return None
-
-    async def fetch_earnings_date_data(self, stock, semaphore):
-        """抓取單一股票的財報日期（earningshub）"""
-        async with semaphore:
-            context = None
-            try:
-                context = await self.browser.new_context(
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-                    viewport={"width": 1920, "height": 1080},
-                    java_script_enabled=True,
-                    locale='zh-TW',
-                    timezone_id='Asia/Taipei',
-                    extra_http_headers={
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                        'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
-                        'Accept-Encoding': 'gzip, deflate, br',
-                        'DNT': '1',
-                        'Connection': 'keep-alive',
-                        'Upgrade-Insecure-Requests': '1',
-                    }
-                )
-
-                # 注入反偵測腳本
-                await context.add_init_script("""
-                    Object.defineProperty(navigator, 'webdriver', {
-                        get: () => undefined
-                    });
-
-                    window.chrome = {
-                        runtime: {},
-                        loadTimes: function() {},
-                        csi: function() {},
-                        app: {}
-                    };
-
-                    Object.defineProperty(navigator, 'plugins', {
-                        get: () => [1, 2, 3, 4, 5]
-                    });
-
-                    Object.defineProperty(navigator, 'languages', {
-                        get: () => ['zh-TW', 'zh', 'en-US', 'en']
-                    });
-                """)
-
-                async with self.contexts_lock:
-                    self.contexts.append(context)
-
-                try:
-                    page = await context.new_page()
-                    earnings_data = await self.get_earnings_date_earningshub(stock, page)
-                    return {stock: earnings_data}
-                finally:
-                    await context.close()
-                    async with self.contexts_lock:
-                        if context in self.contexts:
-                            self.contexts.remove(context)
-
-            except Exception as e:
-                if context:
-                    try:
-                        await context.close()
-                    except:
-                        pass
-                    async with self.contexts_lock:
-                        if context in self.contexts:
-                            self.contexts.remove(context)
-                return {stock: None}
 
     async def run_earnings_dates(self):
         """批次執行財報日期抓取"""
