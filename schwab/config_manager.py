@@ -25,16 +25,27 @@ import queue
 import builtins
 from datetime import datetime, timezone, timedelta
 
+# 🔥 導入工具模組（從上層目錄）
+# 如果 config_manager.py 在 schwab/ 目錄下
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils import get_resource_path
 
 class ConfigManager:
     """配置管理器 - 處理 API 憑證的存儲和讀取"""
 
     def __init__(self):
+        # 🔥 修改：統一在 schwab 資料夾中存放檔案
         if getattr(sys, 'frozen', False):
-            self.base_path = os.path.dirname(sys.executable)
+            # 打包後：在 .exe 同層創建 schwab 資料夾
+            exe_dir = os.path.dirname(sys.executable)
+            self.base_path = os.path.join(exe_dir, 'schwab')
         else:
+            # 開發環境：config_manager.py 所在目錄（已經是 schwab/）
             current_file = os.path.abspath(__file__)
             self.base_path = os.path.dirname(current_file)
+
+        # 🔥 確保 schwab 資料夾存在
+        os.makedirs(self.base_path, exist_ok=True)
 
         self.env_path = os.path.join(self.base_path, '.env')
         self.tokens_path = os.path.join(self.base_path, 'tokens.db')
@@ -43,10 +54,12 @@ class ConfigManager:
         self._last_validation_time = None
         self._last_validation_result = None
 
+        print(f"📁 schwab 資料夾: {self.base_path}")
         print(f"📁 .env 路徑: {self.env_path}")
         print(f"📁 tokens.db 路徑: {self.tokens_path}")
         print(f"📁 .env 存在: {os.path.exists(self.env_path)}")
         print(f"📁 tokens.db 存在: {os.path.exists(self.tokens_path)}")
+
 
     def is_token_valid_fast(self, buffer_hours=24):
         """
@@ -154,7 +167,7 @@ class ConfigManager:
             config = {}
             with open(self.env_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-                print(f"📄 .env 內容長度: {len(content)} 字元")
+                print(f"📄 .env 內容長度: {len(content)} 字數")
 
                 for line in content.split('\n'):
                     line = line.strip()
@@ -410,11 +423,14 @@ class OAuthSetupWindow:
 
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("🔧 API 認證設定")
+        self.root.title("API 認證設定")
         self.root.geometry("1200x1000")
         self.root.resizable(True, True)
         self.root.configure(bg='#1a1a1a')
         self.root.minsize(1200, 1000)
+
+        # 🔥 設定視窗圖示
+        self._set_window_icon()
 
         self.config_manager = ConfigManager()
         self.config_saved = False
@@ -439,7 +455,24 @@ class OAuthSetupWindow:
         y = (self.root.winfo_screenheight() // 2) - (height // 2)
         self.root.geometry(f'{width}x{height}+{x}+{y}')
 
+    def _set_window_icon(self):
+        """設定視窗圖示（使用工具函數）"""
+        try:
+            # 🔥 使用工具函數取得圖示路徑
+            icon_path = get_resource_path('logo.ico')
+
+            if os.path.exists(icon_path):
+                self.root.iconbitmap(icon_path)
+                print(f"✓ OAuth 視窗圖示已載入: {icon_path}")
+            else:
+                print(f"⚠️ 找不到圖示檔案: {icon_path}")
+
+        except Exception as e:
+            print(f"⚠️ 載入 OAuth 視窗圖示時發生錯誤: {e}")
+
     def setup_ui(self):
+        """完整的 UI 設定方法 - App Key 和 App Secret 並排顯示"""
+
         # 主框架
         main_frame = tk.Frame(self.root, bg='#2d2d2d')
         main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
@@ -448,7 +481,7 @@ class OAuthSetupWindow:
         title_label = tk.Label(
             main_frame,
             text="📊 Schwab API 認證設定",
-            font=('微軟正黑體', 18, 'bold'),
+            font=('微軟正黑體', 16, 'bold'),
             fg='#00d4aa',
             bg='#2d2d2d'
         )
@@ -458,7 +491,7 @@ class OAuthSetupWindow:
         step1_frame = tk.LabelFrame(
             main_frame,
             text="  步驟 1: 輸入 API 憑證  ",
-            font=('微軟正黑體', 14, 'bold'),
+            font=('微軟正黑體', 12, 'bold'),
             fg='#00d4aa',
             bg='#2d2d2d',
             relief='solid',
@@ -466,43 +499,48 @@ class OAuthSetupWindow:
         )
         step1_frame.pack(fill=tk.X, pady=10, padx=10)
 
+        # 輸入框容器（使用 pack 佈局實現左右並排）
         input_frame = tk.Frame(step1_frame, bg='#2d2d2d')
-        input_frame.pack(pady=15, padx=20)
+        input_frame.pack(pady=15, padx=20, fill=tk.X)
 
-        # App Key
+        # 左側 - App Key
+        left_frame = tk.Frame(input_frame, bg='#2d2d2d')
+        left_frame.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 10))
+
         tk.Label(
-            input_frame,
+            left_frame,
             text="🔑 App Key:",
-            font=('微軟正黑體', 11, 'bold'),
+            font=('微軟正黑體', 10, 'bold'),
             fg='#ffffff',
             bg='#2d2d2d'
-        ).grid(row=0, column=0, sticky=tk.W, pady=10)
+        ).pack(anchor=tk.W, pady=(0, 5))
 
         self.app_key_entry = tk.Entry(
-            input_frame,
-            width=50,
-            font=('Consolas', 11),
+            left_frame,
+            font=('Consolas', 10),
             bg='#3d3d3d',
             fg='#ffffff',
             insertbackground='#00d4aa',
             relief='flat',
             bd=2
         )
-        self.app_key_entry.grid(row=0, column=1, pady=10, padx=10, ipady=8)
+        self.app_key_entry.pack(fill=tk.X, ipady=8)
 
-        # App Secret
+        # 右側 - App Secret
+        right_frame = tk.Frame(input_frame, bg='#2d2d2d')
+        right_frame.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(10, 0))
+
         tk.Label(
-            input_frame,
+            right_frame,
             text="🔐 App Secret:",
-            font=('微軟正黑體', 12, 'bold'),
+            font=('微軟正黑體', 10, 'bold'),
             fg='#ffffff',
             bg='#2d2d2d'
-        ).grid(row=1, column=0, sticky=tk.W, pady=10)
+        ).pack(anchor=tk.W, pady=(0, 5))
 
         self.app_secret_entry = tk.Entry(
-            input_frame,
-            width=50,
-            font=('Consolas', 11),
+            right_frame,
+            font=('Consolas', 10),
             bg='#3d3d3d',
             fg='#ffffff',
             insertbackground='#00d4aa',
@@ -510,7 +548,7 @@ class OAuthSetupWindow:
             relief='flat',
             bd=2
         )
-        self.app_secret_entry.grid(row=1, column=1, pady=10, padx=10, ipady=8)
+        self.app_secret_entry.pack(fill=tk.X, ipady=8)
 
         # 生成授權連結按鈕
         btn_frame1 = tk.Frame(step1_frame, bg='#2d2d2d')
@@ -520,22 +558,22 @@ class OAuthSetupWindow:
             btn_frame1,
             text="🔗 生成授權連結",
             command=self.generate_auth_url,
-            font=('微軟正黑體', 12, 'bold'),
+            font=('微軟正黑體', 11, 'bold'),
             bg='#00d4aa',
             fg='white',
             activebackground='#00b894',
-            width=20,
+            width=25,
             height=1,
             relief='flat',
             cursor='hand2'
         )
         self.generate_btn.pack()
 
-        # === 步驟 2: 瀏覽器認證 ===
+        # === 步驟 2: 在瀏覽器中完成認證 ===
         step2_frame = tk.LabelFrame(
             main_frame,
             text="  步驟 2: 在瀏覽器中完成認證  ",
-            font=('微軟正黑體', 14, 'bold'),
+            font=('微軟正黑體', 12, 'bold'),
             fg='#ffb347',
             bg='#2d2d2d',
             relief='solid',
@@ -543,27 +581,38 @@ class OAuthSetupWindow:
         )
         step2_frame.pack(fill=tk.X, pady=10, padx=10)
 
+        # 醒目的紅色警告框
+        warning_frame = tk.Frame(step2_frame, bg='#ff4757', relief='solid', bd=3)
+        warning_frame.pack(fill=tk.X, pady=(8, 5), padx=20)
+
+        tk.Label(
+            warning_frame,
+            text="⏰ 重要提醒：授權碼只有 30 秒有效期！",
+            font=('微軟正黑體', 12, 'bold'),
+            fg='white',
+            bg='#ff4757'
+        ).pack(pady=6)
+
         # 說明文字
         instruction_text = """
-點擊下方按鈕後，瀏覽器將開啟 Schwab 認證頁面。
+        點擊下方按鈕後，瀏覽器將開啟 Schwab 認證頁面。
 
-請在瀏覽器中：
-  1. 登入您的 Schwab 帳號
-  2. 授權應用程式存取權限
-  3. 完成後會跳轉到一個「無法連接」的頁面（這是正常的！）
-  4. 複製瀏覽器網址列中的完整 URL
-     （例如：https://127.0.0.1/?code=ABCD1234...）
-        """
+        請在瀏覽器中：
+          1. 登入您的 Schwab 帳號
+          2. 授權應用程式存取權限
+          3. 完成後會跳轉到一個「無法連接」的頁面（這是正常的！）
+          4. ⚡ 立即複製瀏覽器網址列中的完整 URL
+          5. ⚡ 快速回到此視窗並貼到步驟 3（必須在 30 秒內完成）
+                """
 
-        instruction_label = tk.Label(
+        tk.Label(
             step2_frame,
             text=instruction_text,
-            font=('微軟正黑體', 13),
+            font=('微軟正黑體', 11),
             justify=tk.LEFT,
             fg='#ffffff',
             bg='#2d2d2d'
-        )
-        instruction_label.pack(pady=10, padx=20)
+        ).pack(pady=5, padx=20)
 
         # 授權 URL 顯示框
         url_display_frame = tk.Frame(step2_frame, bg='#2d2d2d')
@@ -572,7 +621,7 @@ class OAuthSetupWindow:
         tk.Label(
             url_display_frame,
             text="授權連結：",
-            font=('微軟正黑體', 10),
+            font=('微軟正黑體', 8),
             fg='#b0b0b0',
             bg='#2d2d2d'
         ).pack(anchor=tk.W)
@@ -613,7 +662,7 @@ class OAuthSetupWindow:
         step3_frame = tk.LabelFrame(
             main_frame,
             text="  步驟 3: 貼上回調 URL  ",
-            font=('微軟正黑體', 14, 'bold'),
+            font=('微軟正黑體', 12, 'bold'),
             fg='#ff6b6b',
             bg='#2d2d2d',
             relief='solid',
@@ -664,7 +713,7 @@ class OAuthSetupWindow:
             bg='#00d4aa',
             fg='white',
             activebackground='#00b894',
-            width=20,
+            width=25,
             height=1,
             relief='flat',
             cursor='hand2',
@@ -707,12 +756,12 @@ class OAuthSetupWindow:
 
         if len(app_key) not in (32, 48):
             messagebox.showerror("❌ 格式錯誤",
-                f"App Key 長度不正確！\n當前：{len(app_key)} 字元\n正確：32 或 48 字元")
+                f"App Key 長度不正確！\n當前：{len(app_key)} 字數\n正確：32 或 48 字數")
             return
 
         if len(app_secret) not in (16, 64):
             messagebox.showerror("❌ 格式錯誤",
-                f"App Secret 長度不正確！\n當前：{len(app_secret)} 字元\n正確：16 或 64 字元")
+                f"App Secret 長度不正確！\n當前：{len(app_secret)} 字數\n正確：16 或 64 字數")
             return
 
         # 保存憑證
@@ -739,35 +788,52 @@ class OAuthSetupWindow:
             messagebox.showerror("❌ 錯誤", f"生成授權連結失敗：\n{e}")
 
     def open_browser(self):
-        """開啟瀏覽器並啟動背景認證執行緒"""
+        """開啟瀏覽器 - 先顯示說明再開啟"""
         if self.auth_url:
-            webbrowser.open(self.auth_url)
+            # 🔥 防止重複點擊
+            if self.auth_thread and self.auth_thread.is_alive():
+                messagebox.showwarning(
+                    "⚠️ 請稍候",
+                    "認證程序正在進行中，請勿重複點擊。"
+                )
+                return
+
+            # 🔥 先顯示說明（阻塞式，等待用戶按「確定」）
             messagebox.showinfo(
-                "🌐 瀏覽器已開啟",
+                "🌐 即將開啟瀏覽器",
+                "點擊「確定」後，瀏覽器將開啟 Schwab 認證頁面。\n\n"
                 "請在瀏覽器中完成認證。\n\n"
+                "⏰ 重要：授權碼只有 30 秒有效期！\n"
+                "（30 秒從完成授權、跳轉到無法連接的頁面時才開始計算）\n\n"
                 "完成後：\n"
-                "1. 複製瀏覽器網址列的完整 URL\n"
-                "2. 回到此視窗\n"
-                "3. 貼到「步驟 3」的輸入框中"
+                "1. 立即複製瀏覽器網址列的完整 URL\n"
+                "2. 快速回到此視窗\n"
+                "3. 貼到「步驟 3」的輸入框中並點擊「完成認證」"
             )
 
-            # 保存配置（提前保存）
+            # 🔥 用戶按下「確定」後，才開啟瀏覽器
+            webbrowser.open(self.auth_url)
+            print("🌐 瀏覽器已開啟")
+
+            # 保存配置
             config_data = {
                 'app_key': self.app_key,
                 'app_secret': self.app_secret
             }
             self.config_manager.save_config(config_data)
-            print("✅ 配置已保存到 .env")
 
-            # 啟動背景執行緒來處理 schwabdev 認證
+            # 🔥 禁用按鈕，防止重複點擊
+            self.browser_btn.config(state='disabled', text="🌐 瀏覽器已開啟")
+
+            # 啟動背景執行緒
             self.start_auth_thread()
 
-            # 啟用回調 URL 輸入和完成按鈕
+            # 啟用輸入和按鈕
             self.callback_entry.config(state='normal')
             self.complete_btn.config(state='normal')
 
     def start_auth_thread(self):
-        """在背景執行緒啟動 schwabdev Client - 使用實際參數名稱"""
+        """在背景執行緒啟動 schwabdev Client - 改進錯誤處理版"""
 
         def auth_worker():
             original_input = builtins.input
@@ -794,20 +860,75 @@ class OAuthSetupWindow:
                     tokens_file_path = self.config_manager.tokens_path
                     print(f"📁 Token 將保存至: {tokens_file_path}")
 
-                    # 🔥 使用實際存在的參數名稱
-                    client = schwabdev.Client(
-                        app_key=self.app_key,
-                        app_secret=self.app_secret,
-                        callback_url="https://127.0.0.1",
-                        tokens_db=tokens_file_path,
-                        encryption=None,
-                        timeout=30,
-                        call_on_auth=None  # ✅ 使用 IDE 提示的實際參數
-                    )
+                    # 🔥 關鍵改進：使用 try-except 捕獲所有可能的錯誤
+                    try:
+                        client = schwabdev.Client(
+                            app_key=self.app_key,
+                            app_secret=self.app_secret,
+                            callback_url="https://127.0.0.1",
+                            tokens_db=tokens_file_path,
+                            encryption=None,
+                            timeout=30,
+                            call_on_auth=None
+                        )
 
-                    print("✅ schwabdev Client 初始化成功！")
-                    print(f"✅ Token 已保存為 .db 格式: {tokens_file_path}")
-                    self.result_queue.put(('success', None))
+                        print("✅ schwabdev Client 初始化成功！")
+                        print(f"✅ Token 已保存為 .db 格式: {tokens_file_path}")
+                        self.result_queue.put(('success', None))
+
+                    except AttributeError as e:
+                        # 🔥 捕獲 schwabdev 內部的 AttributeError
+                        error_msg = str(e)
+                        print(f"❌ schwabdev 內部錯誤: {error_msg}")
+
+                        # 判斷是否為授權碼過期導致的錯誤
+                        if "'bool' object has no attribute 'get'" in error_msg:
+                            friendly_error = (
+                                "授權碼已過期或無效！\n\n"
+                                "常見原因：\n"
+                                "1. 從瀏覽器複製 URL 到貼上花費超過 30 秒\n"
+                                "2. 重複使用已使用過的 URL\n"
+                                "3. URL 複製不完整\n\n"
+                                "解決方法：\n"
+                                "• 點擊「開啟瀏覽器進行認證」重新開始\n"
+                                "• 在瀏覽器完成授權後，立即複製並貼上完整的 URL\n"
+                                "• 確保在 30 秒內完成貼上動作"
+                            )
+                            self.result_queue.put(('error', friendly_error))
+                        else:
+                            self.result_queue.put(('error', f"AttributeError: {error_msg}"))
+
+                    except Exception as e:
+                        # 🔥 捕獲其他所有錯誤
+                        error_msg = str(e)
+                        print(f"❌ 認證過程發生錯誤: {error_msg}")
+
+                        # 檢查是否為授權碼過期錯誤
+                        if "AuthorizationCode has expired" in error_msg or \
+                                "Bad authorization code" in error_msg:
+                            friendly_error = (
+                                "授權碼已過期！\n\n"
+                                "Schwab 的授權碼只有 30 秒有效期。\n\n"
+                                "請重試，並在瀏覽器完成授權後\n"
+                                "立即複製並貼上完整的 URL。"
+                            )
+                            self.result_queue.put(('error', friendly_error))
+                        elif "invalid_request" in error_msg or \
+                                "unsupported_token_type" in error_msg:
+                            friendly_error = (
+                                "授權請求無效！\n\n"
+                                "可能原因：\n"
+                                "• 授權碼已過期（超過 30 秒）\n"
+                                "• URL 複製不完整\n"
+                                "• App Key 或 App Secret 不正確\n\n"
+                                "請重試，並確保：\n"
+                                "1. 快速複製完整的 URL\n"
+                                "2. 在 30 秒內貼上\n"
+                                "3. App 憑證正確無誤"
+                            )
+                            self.result_queue.put(('error', friendly_error))
+                        else:
+                            self.result_queue.put(('error', error_msg))
 
                 finally:
                     builtins.input = original_input
@@ -826,7 +947,7 @@ class OAuthSetupWindow:
         self.auth_thread.start()
 
     def complete_authentication(self):
-        """完成認證 - 將 URL 傳給背景執行緒"""
+        """完成認證 - 簡化版"""
         returned_url = self.callback_entry.get().strip()
 
         if not returned_url:
@@ -835,21 +956,21 @@ class OAuthSetupWindow:
 
         if "code=" not in returned_url:
             messagebox.showerror("❌ 錯誤",
-                "URL 格式不正確！\n\n"
-                "請確認 URL 包含授權碼（code=...）")
+                                 "URL 格式不正確！\n\n"
+                                 "請確認 URL 包含授權碼（code=...）")
             return
 
         try:
             print(f"📤 將 callback URL 傳送給背景執行緒...")
 
-            # 把 URL 放入 queue，讓背景執行緒的 schwabdev 使用
+            # 把 URL 放入 queue
             self.callback_queue.put(returned_url)
 
-            # 禁用按鈕，避免重複點擊
+            # 禁用按鈕
             self.complete_btn.config(state='disabled', text="⏳ 處理中...")
             self.callback_entry.config(state='disabled')
 
-            # 啟動檢查結果的定時器
+            # 啟動檢查結果
             self.root.after(100, self.check_auth_result)
 
         except Exception as e:
@@ -858,30 +979,35 @@ class OAuthSetupWindow:
             self.callback_entry.config(state='normal')
 
     def check_auth_result(self):
-        """定時檢查背景執行緒的認證結果"""
+        """檢查認證結果 - 改進錯誤訊息版"""
         try:
-            # 非阻塞檢查 queue
             result = self.result_queue.get_nowait()
 
             if result[0] == 'success':
                 messagebox.showinfo(
                     "✅ 認證成功",
-                    "Token 已成功獲取並保存為 .db 格式！\n\n"
+                    "Schwab API認證成功並保存！\n\n"
                     "程式現在可以正常使用了。"
                 )
                 self.config_saved = True
                 self.root.quit()
                 self.root.destroy()
             else:
-                messagebox.showerror("❌ 認證失敗",
-                    f"認證過程發生錯誤：\n\n{result[1]}\n\n"
-                    "請確認：\n"
-                    "1. URL 是否完整複製\n"
-                    "2. 授權碼是否還有效（30秒內）\n"
-                    "3. 網路連線是否正常\n\n"
-                    "請點擊「開啟瀏覽器進行認證」重試。")
+                # 🔥 顯示友善的錯誤訊息
+                error_msg = result[1]
+
+                messagebox.showerror(
+                    "❌ 認證失敗",
+                    f"{error_msg}\n\n"
+                    "⏰ 提醒：授權碼只有 30 秒有效期！\n"
+                    "請重新點擊「開啟瀏覽器進行認證」，\n"
+                    "並在 30 秒內完成貼上動作。"
+                )
+
+                # 🔥 恢復按鈕狀態，允許重試
                 self.complete_btn.config(state='normal', text="✅ 完成認證")
                 self.callback_entry.config(state='normal')
+                self.browser_btn.config(state='normal', text="🌐 開啟瀏覽器進行認證")
 
         except queue.Empty:
             # 還沒有結果，繼續等待
@@ -890,8 +1016,8 @@ class OAuthSetupWindow:
     def cancel_setup(self):
         """取消設定"""
         result = messagebox.askyesno(
-            "⚠️ 確認退出",
-            "尚未完成設定，確定要退出嗎？\n\n退出後程式將無法正常運行。"
+            "確認退出",
+            "尚未完成設定，確定要退出嗎？"
         )
         if result:
             self.config_saved = False
@@ -1103,3 +1229,7 @@ if __name__ == "__main__":
         print(f"剩餘時間: {hours / 24:.1f} 天")
     else:
         print(f"已過期: {abs(hours) / 24:.1f} 天前")
+
+# 測試用
+if __name__ == "__main__":
+    config, should_continue = check_and_setup_config()

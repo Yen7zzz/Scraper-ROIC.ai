@@ -25,12 +25,11 @@ if sys.platform == 'win32':
 
 # 在事件循環設定完成後才導入其他模組
 from excel_template.fundamental_excel_template import Fundamental_Excel_Template_Base64
-# from excel_template.option_chain_excel_template import Option_Chain_Excel_Template_Base64
 from stock_class.StockScraper import StockScraper
 from stock_class.StockProcess import StockProcess
 from stock_class.StockManager import StockManager
 from stock_class.StockValidator import StockValidator
-
+from utils import get_resource_path
 # ====== GUI 部分 ======
 class StockAnalyzerGUI:
     def __init__(self, config=None):
@@ -39,6 +38,8 @@ class StockAnalyzerGUI:
         self.root.geometry("1400x1000")
         self.root.configure(bg='#1a1a1a')  # 深色背景
         self.root.minsize(1200, 900)
+        # 🔥 設定視窗圖示
+        self._set_window_icon()
         # 🔥 綁定視窗關閉事件
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
@@ -75,6 +76,21 @@ class StockAnalyzerGUI:
         self.current_thread = None
         self.event_loop = None
 
+    def _set_window_icon(self):
+        """設定視窗圖示（使用工具函數）"""
+        try:
+            # 🔥 使用工具函數取得圖示路徑
+            icon_path = get_resource_path('logo.ico')
+
+            if os.path.exists(icon_path):
+                self.root.iconbitmap(icon_path)
+                print(f"✓ 主程式視窗圖示已載入: {icon_path}")
+            else:
+                print(f"⚠️ 找不到圖示檔案: {icon_path}")
+
+        except Exception as e:
+            print(f"⚠️ 載入主程式視窗圖示時發生錯誤: {e}")
+
     def on_closing(self):
         """處理視窗關閉事件"""
         if self.is_running:
@@ -98,55 +114,45 @@ class StockAnalyzerGUI:
             self.root.destroy()
 
     def setup_custom_styles(self):
-        """設定現代化樣式 - 優化字體和配色"""
+        """設定現代化樣式 - 統一字體配置"""
 
         # ===== 🎨 統一字體配置 =====
-        # 🔥 關鍵改進：使用一致的字體系統
-
         # 主要字體（中英文混合）
-        FONT_PRIMARY = 'Microsoft JhengHei'  # 微軟正黑體 - 現代化、清晰
-
-        # 次要字體（純英文/數字）
+        FONT_PRIMARY = 'Microsoft JhengHei'  # 微軟正黑體
         FONT_SECONDARY = 'Segoe UI'  # Windows 原生字體
+        FONT_MONOSPACE = 'Consolas'  # 等寬字體
 
-        # 等寬字體（代碼/股票代碼）
-        FONT_MONOSPACE = 'Consolas'
-
-        # 字體大小
-        SIZE_TITLE = 20  # 主標題
-        SIZE_SUBTITLE = 14  # 副標題
-        SIZE_HEADING = 16  # 章節標題
-        SIZE_BODY = 13  # 內文
-        SIZE_SMALL = 12  # 小字
-        SIZE_BUTTON = 15  # 按鈕
-        SIZE_LOG = 13  # 日誌
+        # 🔥 統一字體大小定義
+        SIZE_MAIN_TITLE = 18  # 財報數據自動化系統
+        SIZE_SECTION_TITLE = 16  # 設定、分析控制、執行日誌
+        SIZE_LABEL = 14  # 選擇模板、股票代碼、資料夾路徑
+        SIZE_BUTTON = 12  # 按鈕
+        SIZE_BODY = 10  # 提示字體、說明文字
+        SIZE_CARD_TITLE = 13  # 卡片標題
+        SIZE_CARD_DESC = 12  # 卡片描述
+        SIZE_SUBTITLE = 10  # 副標題
+        SIZE_LOG = 12  # 日誌文字
 
         # ===== 🎨 優化配色方案 =====
-        # 🔥 關鍵改進：提高對比度，避免過暗
+        bg_dark = '#1e1e1e'
+        bg_card = '#2d2d2d'
+        bg_input = '#3d3d3d'
 
-        # 背景色（稍微提亮）
-        bg_dark = '#1e1e1e'  # 從 #1a1a1a 改為 #1e1e1e
-        bg_card = '#2d2d2d'  # 保持不變
-        bg_input = '#3d3d3d'  # 保持不變
+        accent_blue = '#00d4aa'
+        accent_orange = '#ff6b35'
+        accent_green = '#00b894'
 
-        # 強調色（稍微調整飽和度）
-        accent_blue = '#00d4aa'  # 保持不變（主要強調色）
-        accent_orange = '#ff6b35'  # 保持不變（警告/停止）
-        accent_green = '#00b894'  # 新增：成功狀態
+        text_primary = '#f5f5f5'
+        text_secondary = '#c0c0c0'
+        text_muted = '#909090'
+        text_warning = '#ffd93d'
 
-        # 文字顏色（提高對比度）
-        text_primary = '#f5f5f5'  # 從 #ffffff 改為稍柔和的白色
-        text_secondary = '#c0c0c0'  # 從 #b0b0b0 提亮
-        text_muted = '#909090'  # 新增：更暗的次要文字
-        text_warning = '#ffd93d'  # 新增：警告色（更醒目）
-
-        # ===== 配置主框架樣式 =====
+        # ===== 配置樣式 =====
         self.style.configure('Card.TFrame',
                              background=bg_card,
                              relief='flat',
                              borderwidth=1)
 
-        # ===== 配置標籤框架樣式 =====
         self.style.configure('Card.TLabelframe',
                              background=bg_card,
                              foreground=text_primary,
@@ -156,11 +162,11 @@ class StockAnalyzerGUI:
         self.style.configure('Card.TLabelframe.Label',
                              background=bg_card,
                              foreground=accent_blue,
-                             font=(FONT_PRIMARY, SIZE_HEADING, 'bold'))  # 🔥 統一字體
+                             font=(FONT_PRIMARY, SIZE_SECTION_TITLE, 'bold'))
 
-        # ===== 主要按鈕樣式 =====
+        # 主要按鈕樣式
         self.style.configure('Primary.TButton',
-                             font=(FONT_PRIMARY, SIZE_BUTTON, 'bold'),  # 🔥 統一字體
+                             font=(FONT_PRIMARY, SIZE_BUTTON, 'bold'),
                              foreground='white',
                              focuscolor='none',
                              borderwidth=0,
@@ -168,9 +174,9 @@ class StockAnalyzerGUI:
         self.style.map('Primary.TButton',
                        background=[('active', accent_green), ('!active', accent_blue)])
 
-        # ===== 停止按鈕樣式 =====
+        # 停止按鈕樣式
         self.style.configure('Danger.TButton',
-                             font=(FONT_PRIMARY, SIZE_BUTTON, 'bold'),  # 🔥 統一字體
+                             font=(FONT_PRIMARY, SIZE_BUTTON, 'bold'),
                              foreground='white',
                              focuscolor='none',
                              borderwidth=0,
@@ -178,9 +184,9 @@ class StockAnalyzerGUI:
         self.style.map('Danger.TButton',
                        background=[('active', '#e84393'), ('!active', accent_orange)])
 
-        # ===== 瀏覽按鈕樣式 =====
+        # 瀏覽按鈕樣式
         self.style.configure('Secondary.TButton',
-                             font=(FONT_PRIMARY, SIZE_SMALL),  # 🔥 統一字體
+                             font=(FONT_PRIMARY, SIZE_BODY),
                              foreground=text_primary,
                              focuscolor='none',
                              borderwidth=1,
@@ -188,18 +194,18 @@ class StockAnalyzerGUI:
         self.style.map('Secondary.TButton',
                        background=[('active', '#636e72'), ('!active', '#74b9ff')])
 
-        # ===== 標籤樣式 =====
+        # 標籤樣式
         self.style.configure('Title.TLabel',
                              background=bg_card,
                              foreground=text_primary,
-                             font=(FONT_PRIMARY, SIZE_TITLE))  # 🔥 統一字體
+                             font=(FONT_PRIMARY, SIZE_MAIN_TITLE))
 
         self.style.configure('Subtitle.TLabel',
                              background=bg_card,
                              foreground=text_secondary,
-                             font=(FONT_PRIMARY, SIZE_SUBTITLE))  # 🔥 統一字體
+                             font=(FONT_PRIMARY, SIZE_SUBTITLE))
 
-        # ===== 輸入框樣式 =====
+        # 輸入框樣式
         self.style.configure('Modern.TEntry',
                              fieldbackground=bg_input,
                              foreground=text_primary,
@@ -207,7 +213,7 @@ class StockAnalyzerGUI:
                              insertcolor=text_primary,
                              selectbackground=accent_blue)
 
-        # ===== 進度條樣式 =====
+        # 進度條樣式
         self.style.configure('Modern.Horizontal.TProgressbar',
                              background=accent_blue,
                              troughcolor=bg_input,
@@ -220,7 +226,7 @@ class StockAnalyzerGUI:
                        background=[('active', accent_blue),
                                    ('!active', accent_blue)])
 
-        # 🔥 保存配色方案供其他地方使用
+        # 🔥 保存配色方案
         self.colors = {
             'bg_dark': bg_dark,
             'bg_card': bg_card,
@@ -234,82 +240,85 @@ class StockAnalyzerGUI:
             'text_warning': text_warning
         }
 
-        # 🔥 保存字體方案供其他地方使用
+        # 🔥 保存字體方案（供 setup_ui 使用）
         self.fonts = {
             'primary': FONT_PRIMARY,
             'secondary': FONT_SECONDARY,
             'monospace': FONT_MONOSPACE,
-            'size_title': SIZE_TITLE,
-            'size_subtitle': SIZE_SUBTITLE,
-            'size_heading': SIZE_HEADING,
-            'size_body': SIZE_BODY,
-            'size_small': SIZE_SMALL,
-            'size_button': SIZE_BUTTON,
-            'size_log': SIZE_LOG
+            'size_main_title': SIZE_MAIN_TITLE,  # 18
+            'size_section_title': SIZE_SECTION_TITLE,  # 16
+            'size_label': SIZE_LABEL,  # 14
+            'size_button': SIZE_BUTTON,  # 12
+            'size_body': SIZE_BODY,  # 10
+            'size_card_title': SIZE_CARD_TITLE,  # 13
+            'size_card_desc': SIZE_CARD_DESC,  # 12
+            'size_subtitle': SIZE_SUBTITLE,  # 10
+            'size_log': SIZE_LOG  # 12
         }
 
     def setup_ui(self):
-        """優化版面配置 - 日誌空間更大，設定區域更緊湊"""
+        """優化版面配置 - 使用統一字體系統"""
 
         # 主框架
         main_frame = tk.Frame(self.root, bg=self.colors['bg_dark'])
         main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
 
-        # ===== 標題區域（大幅縮小）=====
+        # ===== 標題區域 =====
         title_frame = tk.Frame(main_frame, bg=self.colors['bg_card'], relief='flat', bd=2)
-        title_frame.pack(fill=tk.X, pady=(0, 8))  # 🔥 從 10 改成 8
+        title_frame.pack(fill=tk.X, pady=(0, 8))
 
         title_content = tk.Frame(title_frame, bg=self.colors['bg_card'])
-        title_content.pack(fill=tk.X, padx=15, pady=6)  # 🔥 從 20, 10 改成 15, 6
+        title_content.pack(fill=tk.X, padx=15, pady=6)
 
-        # 主標題（縮小字體）
+        # 主標題 - 18
         title_label = tk.Label(
             title_content,
             text="📊 財報數據自動化系統",
-            font=(self.fonts['primary'], 18, 'bold'),  # 🔥 從 18 改成 16
+            font=(self.fonts['primary'], self.fonts['size_main_title'], 'bold'),
             foreground=self.colors['accent_blue'],
             bg=self.colors['bg_card']
         )
         title_label.pack()
 
-        # 副標題（縮小字體）
+        # 副標題 - 10
         subtitle_label = tk.Label(
             title_content,
             text="財報數據自動化工具 | Version 3.0",
-            font=(self.fonts['primary'], 10),  # 🔥 從 12 改成 10
+            font=(self.fonts['primary'], self.fonts['size_subtitle']),
             foreground=self.colors['text_secondary'],
             bg=self.colors['bg_card']
         )
-        subtitle_label.pack(pady=(2, 0))  # 🔥 從 3 改成 2
+        subtitle_label.pack(pady=(2, 0))
 
-        # ===== 輸入區域框架（壓縮間距）=====
+        # ===== 輸入區域框架 =====
         input_frame = tk.Frame(main_frame, bg=self.colors['bg_card'], relief='flat', bd=2)
-        input_frame.pack(fill=tk.X, pady=(0, 8))  # 🔥 從 10 改成 8
+        input_frame.pack(fill=tk.X, pady=(0, 8))
 
         input_content = tk.Frame(input_frame, bg=self.colors['bg_card'])
-        input_content.pack(fill=tk.X, padx=12, pady=8)  # 🔥 從 15, 10 改成 12, 8
+        input_content.pack(fill=tk.X, padx=12, pady=8)
 
-        # 設定標題
+        # 設定標題 - 16
         input_title = tk.Label(
             input_content,
             text="🔍 設定",
-            font=(self.fonts['primary'], 12, 'bold'),  # 🔥 從 14 改成 12
+            font=(self.fonts['primary'], self.fonts['size_section_title'], 'bold'),
             foreground=self.colors['accent_blue'],
             bg=self.colors['bg_card']
         )
-        input_title.pack(anchor=tk.W, pady=(0, 6))  # 🔥 從 8 改成 6
+        input_title.pack(anchor=tk.W, pady=(0, 6))
 
-        # ===== 模板選擇區域（壓縮）=====
+        # ===== 模板選擇區域 =====
         template_frame = tk.Frame(input_content, bg=self.colors['bg_card'])
-        template_frame.pack(fill=tk.X, pady=(0, 6))  # 🔥 從 10 改成 6
+        template_frame.pack(fill=tk.X, pady=(0, 6))
 
+        # 選擇模板標題 - 14
         tk.Label(
             template_frame,
             text="📋 選擇模板",
-            font=(self.fonts['primary'], 10, 'bold'),  # 🔥 從 11 改成 10
+            font=(self.fonts['primary'], self.fonts['size_label'], 'bold'),
             foreground=self.colors['text_primary'],
             bg=self.colors['bg_card']
-        ).pack(anchor=tk.W, pady=(0, 4))  # 🔥 從 6 改成 4
+        ).pack(anchor=tk.W, pady=(0, 4))
 
         # 卡片容器
         cards_container = tk.Frame(template_frame, bg=self.colors['bg_card'])
@@ -341,26 +350,31 @@ class StockAnalyzerGUI:
             ],
             variable=self.option_analysis_var,
             side=tk.LEFT,
-            padx=(8, 0)  # 🔥 從 10 改成 8
+            padx=(8, 0)
         )
 
-        # ===== 股票代碼輸入區（壓縮）=====
-        stock_frame = tk.Frame(input_content, bg=self.colors['bg_card'])
-        stock_frame.pack(fill=tk.X, pady=(6, 4))  # 🔥 從 8, 6 改成 6, 4
+        # ===== 股票代碼和資料夾路徑輸入區（左右並排）=====
+        input_row_frame = tk.Frame(input_content, bg=self.colors['bg_card'])
+        input_row_frame.pack(fill=tk.X, pady=(6, 4))
 
+        # 左側 - 股票代碼
+        stock_frame = tk.Frame(input_row_frame, bg=self.colors['bg_card'])
+        stock_frame.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 10))
+
+        # 股票代碼標題 - 14
         tk.Label(
             stock_frame,
             text="💼 股票代碼",
-            font=(self.fonts['primary'], 10, 'bold'),  # 🔥 從 11 改成 10
+            font=(self.fonts['primary'], self.fonts['size_label'], 'bold'),
             foreground=self.colors['text_primary'],
             bg=self.colors['bg_card']
-        ).pack(anchor=tk.W, pady=(0, 3))  # 🔥 從 4 改成 3
+        ).pack(anchor=tk.W, pady=(0, 3))
 
-        # 輸入框
+        # 股票代碼輸入框 - 10
         stocks_entry = tk.Entry(
             stock_frame,
             textvariable=self.stocks_var,
-            font=(self.fonts['monospace'], 10),  # 🔥 從 11 改成 10
+            font=(self.fonts['monospace'], self.fonts['size_body']),
             bg=self.colors['bg_input'],
             fg=self.colors['text_primary'],
             insertbackground=self.colors['accent_blue'],
@@ -369,57 +383,47 @@ class StockAnalyzerGUI:
             relief='flat',
             bd=2
         )
-        stocks_entry.pack(fill=tk.X, ipady=4)  # 🔥 從 5 改成 4
+        stocks_entry.pack(fill=tk.X, ipady=4)
 
-        # 提示文字（縮小字體）
-        help_label = tk.Label(
-            stock_frame,
-            text=(
-                "💡 輸入股票代碼，多個代碼請用逗號分隔 (例如: NVDA, MSFT, AAPL)\n"
-                "💡 代碼中若包含『-』請直接輸入(例如：BRK-B)\n"
-                "💡 若輸入非美國股票代碼，部分資料將有缺失！"
-            ),
-            font=(self.fonts['primary'], 9),  # 🔥 從 10 改成 9
-            foreground=self.colors['text_warning'],
-            bg=self.colors['bg_card'],
-            justify=tk.LEFT
-        )
-        help_label.pack(anchor=tk.W, pady=(3, 0))  # 🔥 從 4 改成 3
+        # 右側 - 資料夾路徑
+        folder_frame = tk.Frame(input_row_frame, bg=self.colors['bg_card'])
+        folder_frame.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(10, 0))
 
-        # ===== 輸出資料夾選擇（壓縮）=====
-        folder_frame = tk.Frame(input_content, bg=self.colors['bg_card'])
-        folder_frame.pack(fill=tk.X, pady=(4, 0))  # 🔥 從 6 改成 4
-
+        # 資料夾路徑標題 - 14
         tk.Label(
             folder_frame,
             text="📁 資料夾路徑",
-            font=(self.fonts['primary'], 10, 'bold'),  # 🔥 從 11 改成 10
+            font=(self.fonts['primary'], self.fonts['size_label'], 'bold'),
             foreground=self.colors['text_primary'],
             bg=self.colors['bg_card']
-        ).pack(anchor=tk.W, pady=(0, 3))  # 🔥 從 4 改成 3
+        ).pack(anchor=tk.W, pady=(0, 3))
 
-        folder_input_frame = tk.Frame(folder_frame, bg=self.colors['bg_card'])
-        folder_input_frame.pack(fill=tk.X)
-
-        # 路徑輸入框
+        # 資料夾路徑輸入框 - 10
         folder_entry = tk.Entry(
-            folder_input_frame,
+            folder_frame,
             textvariable=self.output_folder_var,
-            font=(self.fonts['monospace'], 10),  # 🔥 從 11 改成 10
+            font=(self.fonts['monospace'], self.fonts['size_body']),
             bg=self.colors['bg_input'],
             fg=self.colors['text_primary'],
             insertbackground=self.colors['accent_blue'],
             relief='flat',
             bd=2
         )
-        folder_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=3)  # 🔥 從 4 改成 3
+        folder_entry.pack(fill=tk.X, ipady=4)
 
-        # 瀏覽按鈕
+        # 🔥 瀏覽按鈕 + 提示文字容器（並排）
+        bottom_row_frame = tk.Frame(input_content, bg=self.colors['bg_card'])
+        bottom_row_frame.pack(fill=tk.X, pady=(3, 0))
+
+        # 右側 - 瀏覽按鈕 - 10
+        browse_btn_container = tk.Frame(bottom_row_frame, bg=self.colors['bg_card'])
+        browse_btn_container.pack(side=tk.RIGHT)
+
         browse_btn = tk.Button(
-            folder_input_frame,
-            text="📂 瀏覽",
+            browse_btn_container,
+            text="📂 瀏覽資料夾",
             command=self.browse_folder,
-            font=(self.fonts['primary'], 9, 'bold'),  # 🔥 從 10 改成 9
+            font=(self.fonts['primary'], self.fonts['size_body'], 'bold'),
             bg='#74b9ff',
             fg='white',
             activebackground='#0984e3',
@@ -428,35 +432,50 @@ class StockAnalyzerGUI:
             bd=0,
             cursor='hand2'
         )
-        browse_btn.pack(side=tk.RIGHT, padx=(5, 0), ipady=3, ipadx=8)  # 🔥 從 6, 4, 10 改成 5, 3, 8
+        browse_btn.pack(ipady=4, ipadx=12)
 
-        # ===== 控制區域框架（大幅壓縮）=====
+        # 左側 - 提示文字 - 10
+        help_label = tk.Label(
+            bottom_row_frame,
+            text=(
+                "💡 輸入股票代碼，多個代碼請用逗號分隔 (例如: NVDA, MSFT, AAPL)\n"
+                "💡 代碼中若包含『-』請直接輸入(例如：BRK-B)\n"
+                "💡 若輸入非美國股票代碼，部分資料將有缺失！"
+            ),
+            font=(self.fonts['primary'], self.fonts['size_body']),
+            foreground=self.colors['text_warning'],
+            bg=self.colors['bg_card'],
+            justify=tk.LEFT
+        )
+        help_label.pack(side=tk.LEFT, anchor=tk.W)
+
+        # ===== 控制區域框架 =====
         control_frame = tk.Frame(main_frame, bg=self.colors['bg_card'], relief='flat', bd=2)
-        control_frame.pack(fill=tk.X, pady=(0, 8))  # 🔥 從 10 改成 8
+        control_frame.pack(fill=tk.X, pady=(0, 8))
 
         control_content = tk.Frame(control_frame, bg=self.colors['bg_card'])
-        control_content.pack(fill=tk.X, padx=12, pady=8)  # 🔥 從 15, 10 改成 12, 8
+        control_content.pack(fill=tk.X, padx=12, pady=8)
 
-        # 控制標題
+        # 控制標題 - 16
         control_title = tk.Label(
             control_content,
             text="🎮 分析控制",
-            font=(self.fonts['primary'], 12, 'bold'),  # 🔥 從 14 改成 12
+            font=(self.fonts['primary'], self.fonts['size_section_title'], 'bold'),
             foreground=self.colors['accent_blue'],
             bg=self.colors['bg_card']
         )
-        control_title.pack(anchor=tk.W, pady=(0, 6))  # 🔥 從 8 改成 6
+        control_title.pack(anchor=tk.W, pady=(0, 6))
 
-        # ===== 按鈕區（縮小按鈕）=====
+        # ===== 按鈕區 =====
         button_frame = tk.Frame(control_content, bg=self.colors['bg_card'])
-        button_frame.pack(pady=(0, 6))  # 🔥 從 10 改成 6
+        button_frame.pack(pady=(0, 6))
 
-        # 開始按鈕
+        # 開始按鈕 - 12
         self.start_btn = tk.Button(
             button_frame,
             text="🚀 開始",
             command=self.start_analysis,
-            font=(self.fonts['primary'], 11, 'bold'),  # 🔥 從 13 改成 11
+            font=(self.fonts['primary'], self.fonts['size_button'], 'bold'),
             bg=self.colors['accent_blue'],
             fg='white',
             activebackground=self.colors['accent_green'],
@@ -464,17 +483,17 @@ class StockAnalyzerGUI:
             relief='flat',
             bd=0,
             cursor='hand2',
-            width=10,  # 🔥 從 12 改成 10
+            width=10,
             height=1
         )
-        self.start_btn.pack(side=tk.LEFT, padx=(0, 8))  # 🔥 從 10 改成 8
+        self.start_btn.pack(side=tk.LEFT, padx=(0, 8))
 
-        # 停止按鈕
+        # 停止按鈕 - 12
         self.stop_btn = tk.Button(
             button_frame,
             text="⏹️ 停止",
             command=self.stop_analysis,
-            font=(self.fonts['primary'], 11, 'bold'),  # 🔥 從 13 改成 11
+            font=(self.fonts['primary'], self.fonts['size_button'], 'bold'),
             bg=self.colors['accent_orange'],
             fg='white',
             activebackground='#e84393',
@@ -482,27 +501,28 @@ class StockAnalyzerGUI:
             relief='flat',
             bd=0,
             cursor='hand2',
-            width=10,  # 🔥 從 12 改成 10
+            width=10,
             height=1,
             state=tk.DISABLED
         )
         self.stop_btn.pack(side=tk.LEFT)
 
-        # ===== 進度區域（壓縮）=====
+        # ===== 進度區域 =====
         progress_frame = tk.Frame(control_content, bg=self.colors['bg_card'])
-        progress_frame.pack(fill=tk.X, pady=(0, 6))  # 🔥 從 8 改成 6
+        progress_frame.pack(fill=tk.X, pady=(0, 6))
 
+        # 進度標題 - 10
         tk.Label(
             progress_frame,
             text="📊 數據自動化進度",
-            font=(self.fonts['primary'], 10, 'bold'),  # 🔥 從 11 改成 10
+            font=(self.fonts['primary'], self.fonts['size_body'], 'bold'),
             foreground=self.colors['text_primary'],
             bg=self.colors['bg_card']
-        ).pack(anchor=tk.W, pady=(0, 3))  # 🔥 從 4 改成 3
+        ).pack(anchor=tk.W, pady=(0, 3))
 
-        # 進度條容器（縮小高度）
-        progress_container = tk.Frame(progress_frame, bg=self.colors['bg_input'], height=14)  # 🔥 從 16 改成 14
-        progress_container.pack(fill=tk.X, pady=(0, 4))  # 🔥 從 6 改成 4
+        # 進度條容器
+        progress_container = tk.Frame(progress_frame, bg=self.colors['bg_input'], height=14)
+        progress_container.pack(fill=tk.X, pady=(0, 4))
         progress_container.pack_propagate(False)
 
         self.progress = ttk.Progressbar(
@@ -515,47 +535,47 @@ class StockAnalyzerGUI:
         )
         self.progress.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
 
-        # 百分比標籤
+        # 百分比標籤 - 10
         self.progress_percent_label = tk.Label(
             progress_frame,
             text="0%",
-            font=(self.fonts['secondary'], 9, 'bold'),  # 🔥 從 10 改成 9
+            font=(self.fonts['secondary'], self.fonts['size_body'], 'bold'),
             foreground=self.colors['accent_blue'],
             bg=self.colors['bg_card']
         )
         self.progress_percent_label.pack(anchor=tk.W, pady=(2, 0))
 
-        # 狀態標籤
+        # 狀態標籤 - 10
         self.status_label = tk.Label(
             control_content,
             text="✅ 系統準備就緒",
-            font=(self.fonts['primary'], 10, 'bold'),  # 🔥 從 12 改成 10
+            font=(self.fonts['primary'], self.fonts['size_body'], 'bold'),
             foreground=self.colors['accent_blue'],
             bg=self.colors['bg_card']
         )
-        self.status_label.pack(pady=(6, 0))  # 🔥 從 8 改成 6
+        self.status_label.pack(pady=(6, 0))
 
-        # ===== 日誌區域框架（🔥 關鍵：擴大空間）=====
+        # ===== 日誌區域框架 =====
         log_frame = tk.Frame(main_frame, bg=self.colors['bg_card'], relief='flat', bd=2)
-        log_frame.pack(fill=tk.BOTH, expand=True)  # 🔥 使用 expand=True 佔據剩餘空間
+        log_frame.pack(fill=tk.BOTH, expand=True)
 
         log_content = tk.Frame(log_frame, bg=self.colors['bg_card'])
-        log_content.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)  # 🔥 從 15, 10 改成 12, 8
+        log_content.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
 
-        # 日誌標題
+        # 日誌標題 - 16
         log_title = tk.Label(
             log_content,
             text="📋 執行日誌",
-            font=(self.fonts['primary'], 12, 'bold'),  # 🔥 從 14 改成 12
+            font=(self.fonts['primary'], self.fonts['size_section_title'], 'bold'),
             foreground=self.colors['accent_blue'],
             bg=self.colors['bg_card']
         )
-        log_title.pack(anchor=tk.W, pady=(0, 4))  # 🔥 從 6 改成 4
+        log_title.pack(anchor=tk.W, pady=(0, 4))
 
-        # 🔥 日誌文字框（增加最小高度）
+        # 日誌文字框 - 12
         self.log_text = scrolledtext.ScrolledText(
             log_content,
-            font=(self.fonts['monospace'], 14),  # 🔥 從 11 改成 10
+            font=(self.fonts['monospace'], self.fonts['size_log']),
             bg='#1a1a1a',
             fg='#00ff00',
             insertbackground=self.colors['accent_blue'],
@@ -564,60 +584,60 @@ class StockAnalyzerGUI:
             relief='flat',
             bd=2,
             wrap=tk.WORD,
-            height=25  # 🔥 從 20 增加到 25
+            height=25
         )
-        self.log_text.pack(fill=tk.BOTH, expand=True)  # 🔥 確保填滿所有剩餘空間
+        self.log_text.pack(fill=tk.BOTH, expand=True)
 
         # 初始化日誌
         self.log_text.insert(tk.END, "=== 程式已啟動 ===\n")
         self.log_text.insert(tk.END, "系統準備就緒，請選擇模板並輸入股票代碼開始自動化...\n\n")
 
     def create_template_card(self, parent, title, descriptions, variable, side=tk.LEFT, padx=(0, 0)):
-        """創建模板選擇卡片 - 壓縮版本"""
+        """創建模板選擇卡片 - 使用統一字體"""
 
         # 卡片外框
         card_frame = tk.Frame(parent, bg=self.colors['bg_input'], relief='flat', bd=2, cursor='hand2')
         card_frame.pack(side=side, padx=padx, fill=tk.BOTH, expand=True)
 
-        # 卡片內容容器（減少 padding）
+        # 卡片內容容器
         card_content = tk.Frame(card_frame, bg=self.colors['bg_input'])
-        card_content.pack(fill=tk.BOTH, expand=True, padx=10, pady=8)  # 🔥 從 12, 12 改成 10, 8
+        card_content.pack(fill=tk.BOTH, expand=True, padx=10, pady=8)
 
-        # 標題（縮小字體）
+        # 🔥 卡片標題 - 使用 size_card_title (13)
         title_label = tk.Label(
             card_content,
             text=title,
-            font=(self.fonts['primary'], 13, 'bold'),  # 🔥 從 11 改成 10
+            font=(self.fonts['primary'], self.fonts['size_card_title'], 'bold'),  # 13
             foreground=self.colors['text_primary'],
             bg=self.colors['bg_input']
         )
-        title_label.pack(anchor=tk.W, pady=(0, 6))  # 🔥 從 8 改成 6
+        title_label.pack(anchor=tk.W, pady=(0, 6))
 
         # 分隔線
         separator = tk.Frame(card_content, bg=self.colors['accent_blue'], height=2)
-        separator.pack(fill=tk.X, pady=(0, 6))  # 🔥 從 8 改成 6
+        separator.pack(fill=tk.X, pady=(0, 6))
 
-        # 描述文字（縮小字體和間距）
+        # 🔥 卡片描述 - 使用 size_card_desc (12)
         for desc in descriptions:
             desc_label = tk.Label(
                 card_content,
                 text=desc,
-                font=(self.fonts['primary'], 12),  # 🔥 從 10 改成 9
+                font=(self.fonts['primary'], self.fonts['size_card_desc']),  # 12
                 foreground=self.colors['text_secondary'],
                 bg=self.colors['bg_input'],
                 anchor=tk.W
             )
             desc_label.pack(anchor=tk.W, pady=1)
 
-        # 狀態標籤
+        # 🔥 狀態標籤 - 使用 size_body (10)
         status_label = tk.Label(
             card_content,
             text="[已選擇]" if variable.get() else "[點擊選擇]",
-            font=(self.fonts['primary'], 9, 'bold'),  # 🔥 從 10 改成 9
+            font=(self.fonts['primary'], self.fonts['size_body'], 'bold'),  # 10
             foreground=self.colors['accent_blue'] if variable.get() else '#666666',
             bg=self.colors['bg_input']
         )
-        status_label.pack(pady=(8, 0))  # 🔥 從 10 改成 8
+        status_label.pack(pady=(8, 0))
 
         # 綁定點擊事件
         def toggle_selection(event=None):
@@ -856,24 +876,22 @@ class StockAnalyzerGUI:
         # 構建確認訊息
         templates_text = []
         if do_stock_analysis:
-            templates_text.append("✅ 股票分析（完整數據）")
+            templates_text.append("✅ 財報基本面分析")
         if do_option_analysis:
-            templates_text.append("✅ 選擇權分析（Option Chain）")
+            templates_text.append("✅ 選擇權鏈分析")
 
         templates_str = "\n   ".join(templates_text)
 
         confirmation_message = (
             f"即將驗證並數據自動化以下股票：\n"
-            f"📈 {', '.join(stocks)}\n\n"
-            f"📋 分析模板：\n"
+            f"{', '.join(stocks)}\n\n"
+            f"模板：\n"
             f"   {templates_str}\n\n"
-            f"🔍 系統將先驗證股票代碼有效性\n"
-            f"📊 僅數據自動化有效的股票代碼\n"
-            f"🔥 預計需要數分鐘時間\n\n"
+            f"預計需要數分鐘時間\n\n"
             f"是否開始？"
         )
 
-        if not messagebox.askyesno("🚀 確認開始", confirmation_message):
+        if not messagebox.askyesno("確認開始", confirmation_message):
             return
 
         # 禁用按鈕
@@ -1097,7 +1115,7 @@ class StockAnalyzerGUI:
             # 計算總步驟數
             total_steps = 0
             if do_stock_analysis and do_option_analysis:
-                total_steps = 15
+                total_steps = 16
             elif do_stock_analysis:
                 total_steps = 10
             elif do_option_analysis:

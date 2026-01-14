@@ -330,8 +330,6 @@ class StockManager:
                     )
                     print(f"{'✅' if '成功' in message else '❌'} {message}")
 
-    # ... 其他方法（beta, barchart, option_chains）保持不變 ...
-
     def save_all_excel_files(self, output_folder=None):
         """保存所有股票分析Excel檔案"""
         if output_folder is None:
