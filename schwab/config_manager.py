@@ -18,7 +18,7 @@ import os
 import sys
 import webbrowser
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
+from tkinter import messagebox, scrolledtext
 import schwabdev
 import threading
 import queue

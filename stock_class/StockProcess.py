@@ -8,13 +8,9 @@ import re
 from openpyxl import load_workbook
 from openpyxl.styles import Font
 from openpyxl.utils.dataframe import dataframe_to_rows
-import yfinance as yf
 from excel_template.fundamental_excel_template import Fundamental_Excel_Template_Base64
-# from excel_template.option_chain_excel_template import Option_Chain_Excel_Template_Base64
-from stock_class.RareLimitManager import RateLimitManager
 import os
-import tempfile
-import xlwings as xw
+
 class StockProcess:
     def __init__(self, max_concurrent=2, request_delay=2.0):
         # 將 semaphore 移到類別層級，確保全域限制
@@ -197,11 +193,9 @@ class StockProcess:
             cleaned_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
 
             # 檢查是否為非美國企業錯誤訊息
-            # if raw_df_financial.get(stock) == [f'{stock}是非美國企業，此頁面須付費！']:
-            #     return cleaned_base64, f'Financial: {stock}是非美國企業，此頁面須付費！'
-            # print(raw_df_financial)
-            if raw_df_financial is None:
+            if raw_df_financial.get(stock) == [f'{stock}是非美國企業，此頁面須付費！']:
                 return cleaned_base64, f'Financial: {stock}是非美國企業，此頁面須付費！'
+            # print('raw_df_financial:',raw_df_financial)
 
             # 開始處理數據
             d_1_raw_df_financial = [y for x in raw_df_financial.get(stock, pd.DataFrame({})) for y in x]
@@ -295,7 +289,10 @@ class StockProcess:
                 wb.save(output_buffer)
                 output_buffer.seek(0)
                 cleaned_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
-                print(raw_df_financial)
+
+                if raw_df_financial is None:
+                    return cleaned_base64, f'Financial: {stock}是非美國企業，此頁面須付費！'
+
                 return cleaned_base64, f"處理{stock}的Financial資料時發生錯誤，已清空相關區域: {e}"
             except:
                 # 如果連清除都失敗，只能返回原始版本
@@ -328,9 +325,9 @@ class StockProcess:
             cleaned_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
             # print(raw_df_ratios)
 
-            # 檢查是否為非美國企業錯誤訊息
-            if raw_df_ratios is None:
-                return cleaned_base64, f'Ratios: {stock}是非美國企業，此頁面須付費！'
+            if raw_df_ratios.get(stock) == [f'{stock}是非美國企業，此頁面須付費！']:
+                return cleaned_base64, f'Financial: {stock}是非美國企業，此頁面須付費！'
+
             # print('程式有到這邊')
             # 定義各類財務數據的起始位置（對應A.py的7個類別）
             starting_cell = [
@@ -436,6 +433,9 @@ class StockProcess:
                 wb.save(output_buffer)
                 output_buffer.seek(0)
                 cleaned_base64 = base64.b64encode(output_buffer.read()).decode('utf-8')
+
+                if raw_df_ratios is None:
+                    return cleaned_base64, f'Ratios: {stock}是非美國企業，此頁面須付費！'
 
                 return cleaned_base64, f"處理Ratios資料時發生錯誤，已清空相關區域: {e}"
             except:
@@ -607,27 +607,6 @@ class StockProcess:
 
             except Exception as e:
                 return excel_base64, f"獲取 {stock} 資料時發生錯誤：{str(e)}"
-
-    async def _write_to_excel(self, excel_base64, dic_data):
-        """寫入Excel文件"""
-
-        def write_excel():
-            excel_binary = base64.b64decode(excel_base64)
-            excel_buffer = io.BytesIO(excel_binary)
-            wb = load_workbook(excel_buffer)
-
-            ws = wb.worksheets[0]
-
-            ws['EQ2'] = dic_data['Stock']
-            ws['ER2'] = dic_data['CurrentPrice']
-
-            # 儲存到base64
-            output_buffer = io.BytesIO()
-            wb.save(output_buffer)
-            output_buffer.seek(0)
-            return base64.b64encode(output_buffer.read()).decode('utf-8')
-
-        return await asyncio.to_thread(write_excel)
 
     def write_TradeingView_data_to_excel(self, stock, tradingview_data, excel_base64):
         """將TradingView數據寫入Excel"""

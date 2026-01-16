@@ -43,8 +43,6 @@ class StockAnalyzerGUI:
         # 🔥 綁定視窗關閉事件
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-        # 🔥 綁定 Ctrl+C 處理
-        self.root.bind('<Control-c>', lambda e: self.on_closing())
         # 保存配置
         self.config = config  # 👈 儲存配置
 
@@ -1317,14 +1315,31 @@ class StockAnalyzerGUI:
                 await manager.process_TradingView()
                 self.log("✅ TradingView 完成")
 
-                # 財報日期
+                # 🔥 修復：財報日期處理（在保存檔案前完成寫入）
                 check_if_stopped()
                 current_step += 1
-                self.update_progress(current_step, total_steps, "[股票] 財報日期")
-                self.log(f"\n📅 步驟 {current_step}/{total_steps}：抓取財報日期...")
 
-                await manager.process_earnings_dates()
-                self.log("✅ 財報日期完成")
+                if do_option_analysis:
+                    # 🎯 情況1：兩個模板都選 → 抓取並立即寫入 Fundamental（稍後再寫入 Option）
+                    self.update_progress(current_step, total_steps, "[股票] 抓取並寫入財報日期")
+                    self.log(f"\n📅 步驟 {current_step}/{total_steps}：處理財報日期...")
+
+                    # 抓取
+                    await manager.fetch_earnings_dates()
+                    # 立即寫入 Fundamental（確保保存檔案前有數據）
+                    await manager.write_earnings_to_fundamental()
+                    self.log("✅ 財報日期已寫入 Fundamental 模板（稍後也會寫入 Option 模板）")
+
+                else:
+                    # 🎯 情況2：只選股票分析 → 抓取並立即寫入 Fundamental
+                    self.update_progress(current_step, total_steps, "[股票] 財報日期")
+                    self.log(f"\n📅 步驟 {current_step}/{total_steps}：處理財報日期...")
+
+                    # 抓取
+                    await manager.fetch_earnings_dates()
+                    # 寫入 Fundamental
+                    await manager.write_earnings_to_fundamental()
+                    self.log("✅ 財報日期完成")
 
                 # 保存檔案
                 check_if_stopped()
@@ -1393,25 +1408,35 @@ class StockAnalyzerGUI:
 
                         self.log("✅ 所有選擇權數據抓取完成")
 
-                        # 🔥 新增：財報日期處理（針對 Option 模板）
+                        # 🔥 修改：財報日期處理（智能判斷）
                         check_if_stopped()
                         current_step += 1
                         step_num = f"{current_step}/{total_steps}"
-                        self.update_progress(current_step, total_steps, "[選擇權] 抓取財報公布日期")
-                        self.log(f"\n📅 步驟 {step_num}:[選擇權] 正在寫入財報公布日期到選擇權模板...")
 
-                        # 🔥 關鍵：如果股票分析沒執行，需要先抓取財報日期
-                        if not do_stock_analysis:
-                            await manager.process_earnings_dates()
+                        if do_stock_analysis:
+                            # 🎯 情況1：兩個模板都選 → Fundamental 已寫入，只需寫入 Option
+                            self.update_progress(current_step, total_steps, "[選擇權] 寫入財報日期")
+                            self.log(f"\n📅 步驟 {step_num}：將財報日期寫入 Option 模板...")
+
+                            # Fundamental 已在股票分析階段寫入，這裡只寫入 Option
+                            self.log("   ℹ️  Fundamental 模板已在股票分析階段寫入")
+
+                            # 寫入 Option
+                            self.log("   📄 寫入 Option 模板...")
+                            await manager.write_earnings_to_option()
+
+                            self.log("✅ 財報日期已寫入 Option 模板")
+
                         else:
-                            # 如果已經在股票分析階段抓取過，只需要寫入 Option 模板
-                            self.log("   ℹ️ 財報日期已在股票分析階段抓取，正在寫入選擇權模板...")
+                            # 🎯 情況2：只選選擇權 → 需要抓取並寫入 Option
+                            self.update_progress(current_step, total_steps, "[選擇權] 財報日期")
+                            self.log(f"\n📅 步驟 {step_num}：處理財報日期...")
 
-                            # 直接從已抓取的數據寫入（需要確保 scraper 已執行過 run_earnings_dates）
-                            # 或者重新執行一次（比較安全）
-                            await manager.process_earnings_dates()
-
-                        self.log("✅ 財報公布日期寫入選擇權模板完成")
+                            # 抓取
+                            await manager.fetch_earnings_dates()
+                            # 寫入 Option
+                            await manager.write_earnings_to_option()
+                            self.log("✅ 財報日期完成")
 
                         # 🔥 步驟 2: 批次寫入 (實際上已在上面的方法中完成)
                         check_if_stopped()
@@ -1448,10 +1473,15 @@ class StockAnalyzerGUI:
             end_time = time.time()
             execution_time = end_time - start_time
 
+            def convert_seconds_to_hms(execution_time):
+                minutes_total, second = divmod(round(execution_time), 60)
+                hours, minutes = divmod(minutes_total, 60)
+                return f'{hours:02}小時{minutes:02}分{second:02}秒'
+
             # 🔥 簡潔的完成訊息
             self.log("\n" + "🎉" + "=" * 80)
             self.log("🎊 股票數據自動化完成！")
-            self.log(f"⏱️  執行時間：{execution_time:.2f} 秒")
+            self.log(f"⏱️  執行時間：{convert_seconds_to_hms(execution_time)}")
             self.log(f"📊 處理股票：{len(stocks_dict['final_stocks'])} 支")
 
             if do_stock_analysis:
@@ -1480,7 +1510,7 @@ class StockAnalyzerGUI:
                     completion_msg += f"🔴 非美國公司：{len(non_us_stocks)} 支\n"
                     completion_msg += f"   （已跳過 Financial/Ratios）\n"
 
-            completion_msg += f"⏱️  執行時間：{execution_time:.1f} 秒\n"
+            completion_msg += f"⏱️  執行時間：{convert_seconds_to_hms(execution_time)}\n"
             completion_msg += f"💾 保存檔案：{len(saved_stock_files) + len(saved_option_files)} 個"
 
             messagebox.showinfo("🎉 完成", completion_msg)

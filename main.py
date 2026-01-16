@@ -16,8 +16,6 @@ import tkinter as tk
 from tkinter import messagebox
 import sys
 import os
-import time
-
 
 def main():
     """主程式入口 - 加入啟動畫面"""

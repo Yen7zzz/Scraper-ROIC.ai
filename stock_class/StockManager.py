@@ -1,6 +1,5 @@
 import asyncio
 import os
-from datetime import datetime
 from stock_class.RareLimitManager import RateLimitManager
 import shutil
 import tempfile
@@ -43,6 +42,8 @@ class StockManager:
         # 🔥 選擇權模板路徑
         self.option_template_path = self._get_option_template_path()
         self.temp_dir = None
+
+        self.cached_earnings_data = None  # 緩存財報日期數據
 
         # 使用共享的速率限制管理器
         if hasattr(processor, 'rate_limiter'):
@@ -159,6 +160,7 @@ class StockManager:
             print(f"\n⚠️  正在清空 {len(self.non_us_stocks)} 支非美國公司的 Financial 區域...")
             for stock in self.non_us_stocks:
                 if stock in self.fundamental_excel_files:
+                    # print('stock:',stock)
                     modified_base64, message = await self.processor.process_df_financial(
                         None, stock, self.fundamental_excel_files[stock]
                     )
@@ -298,19 +300,40 @@ class StockManager:
                         self.fundamental_excel_files[stock] = modified_base64
                         print(f"✅ {message}")
 
-    async def process_earnings_dates(self):
-        """處理財報日期（COE + ADR 都處理）"""
-        print(f"\n🔄 開始處理財報日期（{len(self.stocks)} 支股票）...")
+    async def fetch_earnings_dates(self):
+        """
+        【步驟1】抓取財報日期數據（只爬網站，不寫入）
 
-        raw_earnings = await self.scraper.run_earnings_dates()
+        Returns:
+            抓取的原始數據（會自動緩存）
+        """
+        print(f"\n🔄 開始抓取財報日期（{len(self.stocks)} 支股票）...")
 
-        for earnings_dict in raw_earnings:
+        # 🔥 關鍵：抓取並緩存
+        self.cached_earnings_data = await self.scraper.run_earnings_dates()
+
+        print(f"✅ 財報日期抓取完成")
+        return self.cached_earnings_data
+
+    async def write_earnings_to_fundamental(self):
+        """
+        【步驟2a】將緩存的財報日期寫入 Fundamental 模板
+
+        ⚠️ 必須先調用 fetch_earnings_dates()
+        """
+        if self.cached_earnings_data is None:
+            print("⚠️ 警告：尚未抓取財報日期，請先調用 fetch_earnings_dates()")
+            return
+
+        print(f"\n📄 正在寫入財報日期到 Fundamental 模板...")
+
+        for earnings_dict in self.cached_earnings_data:
             for stock, earnings_data in earnings_dict.items():
                 if earnings_data is None:
-                    print(f"❌ {stock} 的財報日期為 None")
+                    print(f"   ⚠️ {stock} 的財報日期為 None")
                     continue
 
-                # 寫入 Fundamental 模板
+                # 只寫入 Fundamental 模板
                 if stock in self.fundamental_excel_files:
                     modified_base64, message = self.processor.write_earnings_date_to_fundamental_excel(
                         stock=stock,
@@ -319,16 +342,51 @@ class StockManager:
                     )
                     if modified_base64:
                         self.fundamental_excel_files[stock] = modified_base64
-                        print(f"✅ {message}")
+                        print(f"   ✅ {message}")
+                    else:
+                        print(f"   ❌ {message}")
 
-                # 寫入 Option 模板
+        print("✅ Fundamental 模板寫入完成")
+
+    async def write_earnings_to_option(self):
+        """
+        【步驟2b】將緩存的財報日期寫入 Option 模板
+
+        ⚠️ 必須先調用 fetch_earnings_dates()
+        """
+        if self.cached_earnings_data is None:
+            print("⚠️ 警告：尚未抓取財報日期，請先調用 fetch_earnings_dates()")
+            return
+
+        print(f"\n📄 正在寫入財報日期到 Option 模板...")
+
+        for earnings_dict in self.cached_earnings_data:
+            for stock, earnings_data in earnings_dict.items():
+                if earnings_data is None:
+                    print(f"   ⚠️ {stock} 的財報日期為 None")
+                    continue
+
+                # 只寫入 Option 模板
                 if stock in self.option_excel_files:
                     file_path, message = self.processor.write_earnings_date_to_option_excel(
                         stock=stock,
                         earnings_data=earnings_data,
                         file_path=self.option_excel_files[stock]
                     )
-                    print(f"{'✅' if '成功' in message else '❌'} {message}")
+                    print(f"   {'✅' if '成功' in message else '❌'} {message}")
+
+        print("✅ Option 模板寫入完成")
+
+    # ===== 🔥 可選：保留舊方法作為向後兼容 =====
+    async def process_earnings_dates(self):
+        """
+        ⚠️ 已過時：建議使用新的分離方法
+
+        舊方法：同時抓取並寫入兩個模板（保留用於向後兼容）
+        """
+        await self.fetch_earnings_dates()
+        await self.write_earnings_to_fundamental()
+        await self.write_earnings_to_option()
 
     def save_all_excel_files(self, output_folder=None):
         """保存所有股票分析Excel檔案"""

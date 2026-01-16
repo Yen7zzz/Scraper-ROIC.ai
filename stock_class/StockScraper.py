@@ -367,21 +367,20 @@ class StockScraper:
                 await page.goto(URL, wait_until='networkidle', timeout=100000) # networkidle
 
                 # 2025/09/23 更新新邏輯
-
-                await page.wait_for_selector('table.w-full.caption-bottom.text-sm.table-fixed', timeout=100000)
-                content = await page.content()
-                dfs = pd.read_html(StringIO(content))
-                return dfs
+                # await page.wait_for_selector('table.w-full.caption-bottom.text-sm.table-fixed', timeout=100000)
+                # content = await page.content()
+                # dfs = pd.read_html(StringIO(content))
+                # return dfs
 
                 # 之前的邏輯
-                # if await page.query_selector(
-                #         'div.rounded-lg.bg-card.text-card-foreground.shadow-sm.mx-auto.flex.w-\\[500px\\].flex-col.items-center.border.drop-shadow-lg'):
-                #     return f'{stock}是非美國企業，此頁面須付費！'
-                # else:
-                #     await page.wait_for_selector('table.w-full.caption-bottom.text-sm.table-fixed', timeout=100000)
-                #     content = await page.content()
-                #     dfs = pd.read_html(StringIO(content))
-                #     return dfs
+                if await page.query_selector(
+                        'div.rounded-lg.bg-card.text-card-foreground.shadow-sm.mx-auto.flex.w-\\[500px\\].flex-col.items-center.border.drop-shadow-lg'):
+                    return f'{stock}是非美國企業，此頁面須付費！'
+                else:
+                    await page.wait_for_selector('table.w-full.caption-bottom.text-sm.table-fixed', timeout=100000)
+                    content = await page.content()
+                    dfs = pd.read_html(StringIO(content))
+                    return dfs
 
             except Exception as e:
                 attempt += 1
@@ -448,20 +447,20 @@ class StockScraper:
                 await page.goto(URL, wait_until='load', timeout=50000)
 
                 # 2025/09/23 更新新邏輯
-                await page.wait_for_selector('table.w-full.caption-bottom.text-sm.table-fixed', timeout=100000)
-                content = await page.content()
-                dfs = pd.read_html(StringIO(content))
-                return dfs
+                # await page.wait_for_selector('table.w-full.caption-bottom.text-sm.table-fixed', timeout=100000)
+                # content = await page.content()
+                # dfs = pd.read_html(StringIO(content))
+                # return dfs
 
                 # 之前的邏輯
-                # if await page.query_selector(
-                #         'div.rounded-lg.bg-card.text-card-foreground.shadow-sm.mx-auto.flex.w-\\[500px\\].flex-col.items-center.border.drop-shadow-lg'):
-                #     return f'{stock}是非美國企業，此頁面須付費！'
-                # else:
-                #     await page.wait_for_selector('table.w-full.caption-bottom.text-sm.table-fixed', timeout=100000)
-                #     content = await page.content()
-                #     dfs = pd.read_html(StringIO(content))
-                #     return dfs
+                if await page.query_selector(
+                        'div.rounded-lg.bg-card.text-card-foreground.shadow-sm.mx-auto.flex.w-\\[500px\\].flex-col.items-center.border.drop-shadow-lg'):
+                    return f'{stock}是非美國企業，此頁面須付費！'
+                else:
+                    await page.wait_for_selector('table.w-full.caption-bottom.text-sm.table-fixed', timeout=100000)
+                    content = await page.content()
+                    dfs = pd.read_html(StringIO(content))
+                    return dfs
 
             except Exception as e:
                 attempt += 1
@@ -855,7 +854,7 @@ class StockScraper:
     #             return {"stock": stock, "error": str(e)}
 
     async def get_seekingalpha_html(self, stock, page, retries=3):
-        """抓取特定股票的摘要資料並回傳 DataFrame - 強化版"""
+        """抓取特定股票的摘要資料 - PerimeterX CAPTCHA 檢測版"""
         if '-' in stock:
             stock = ''.join(['.' if char == '-' else char for char in stock])
 
@@ -866,16 +865,16 @@ class StockScraper:
             try:
                 print(f"正在嘗試抓取 {stock} 的資料 (第 {attempt + 1} 次)...")
 
-                # 🔥 強化: 更長的隨機等待
+                # 隨機等待
                 await asyncio.sleep(random.uniform(3, 7))
 
                 # 前往頁面
                 await page.goto(URL, wait_until='domcontentloaded', timeout=60000)
 
-                # 🔥 強化: 更真實的瀏覽行為
+                # 等待頁面渲染
                 await asyncio.sleep(random.uniform(2, 4))
 
-                # 模擬滑鼠移動軌跡
+                # 模擬人類瀏覽行為
                 for _ in range(random.randint(2, 4)):
                     x = random.randint(100, 800)
                     y = random.randint(100, 600)
@@ -888,64 +887,54 @@ class StockScraper:
                     await page.evaluate(f'window.scrollTo(0, {pos})')
                     await asyncio.sleep(random.uniform(0.5, 1.2))
 
-                # 🔥 步驟 1: 檢查是否有 Cloudflare Challenge（無限等待）
-                await self._wait_for_cloudflare_resolution(stock, page)
+                # 🔥 方法 1: 檢測 PerimeterX CAPTCHA（精準檢測）
+                px_captcha = await page.query_selector('#px-captcha-wrapper, #px-captcha, .px-captcha-container')
 
-                # 🔥 步驟 2: 檢查是否有 Press & Hold CAPTCHA
-                try:
-                    captcha_button = await page.wait_for_selector(
-                        'button:has-text("Press & Hold"), div:has-text("Press & Hold")',
-                        timeout=3000
-                    )
+                if px_captcha:
+                    # 確認是否可見
+                    is_visible = await px_captcha.is_visible()
+                    if is_visible:
+                        print(f"\n{'🔴' * 30}")
+                        print(f"⚠️  {stock} 偵測到 PerimeterX 驗證！")
+                        print("⚠️  請在瀏覽器中完成「按壓不放」驗證")
+                        print("⚠️  驗證完成後程式將自動繼續...")
+                        print(f"{'🔴' * 30}\n")
 
-                    if captcha_button:
-                        print("⚠️ 偵測到 Press & Hold CAPTCHA，正在處理...")
-                        box = await captcha_button.bounding_box()
+                        # 無限等待直到 CAPTCHA 消失
+                        await self._wait_for_px_captcha_resolution(stock, page)
 
-                        if box:
-                            x = box['x'] + box['width'] / 2
-                            y = box['y'] + box['height'] / 2
+                # 🔥 方法 2: 反向檢測（備用方案）
+                target_section = await page.query_selector('section[data-test-id="card-container-growth-rates"]')
 
-                            await page.mouse.move(x - 50, y - 50)
-                            await asyncio.sleep(random.uniform(0.3, 0.6))
-                            await page.mouse.move(x, y)
-                            await asyncio.sleep(random.uniform(0.2, 0.4))
+                if not target_section:
+                    print(f"\n{'🟡' * 30}")
+                    print(f"⚠️  {stock} 目標數據未出現")
+                    print("⚠️  可能需要驗證或頁面載入延遲")
+                    print("⚠️  等待中...")
+                    print(f"{'🟡' * 30}\n")
 
-                            await page.mouse.down()
-                            hold_time = random.uniform(2.5, 4.0)
-                            print(f"   按住 {hold_time:.1f} 秒...")
-                            await asyncio.sleep(hold_time)
-                            await page.mouse.up()
+                    # 無限等待直到目標出現
+                    await self._wait_for_target_element(stock, page)
 
-                            print("✓ 已完成 Press & Hold 驗證")
-                            await asyncio.sleep(random.uniform(3, 5))
+                # 🔥 確認目標元素已載入
+                await page.wait_for_selector(
+                    'section[data-test-id="card-container-growth-rates"] table[data-test-id="table"]',
+                    timeout=10000
+                )
+                await page.wait_for_selector(
+                    'section[data-test-id="card-container-growth-rates"] th:has-text("Revenue")',
+                    timeout=10000
+                )
 
-                except Exception:
-                    print(f"   未偵測到 Press & Hold CAPTCHA（正常）")
+                await asyncio.sleep(2)
 
-                # 🔥 步驟 3: 等待關鍵元素載入
-                try:
-                    await page.wait_for_selector('section[data-test-id="card-container-growth-rates"]', timeout=15000)
-                    await page.wait_for_selector(
-                        'section[data-test-id="card-container-growth-rates"] table[data-test-id="table"]',
-                        timeout=10000)
-                    await page.wait_for_selector(
-                        'section[data-test-id="card-container-growth-rates"] th:has-text("Revenue")', timeout=10000)
-
-                    await asyncio.sleep(2)
-
-                except Exception as e:
-                    print(f"等待關鍵元素時發生錯誤: {e}")
-                    raise e
-
-                # 獲取頁面內容
+                # ===== 開始解析數據 =====
                 content = await page.content()
                 soup = BeautifulSoup(content, 'html.parser')
 
                 growth_section = soup.find('section', {'data-test-id': 'card-container-growth-rates'})
 
                 if not growth_section:
-                    print("未找到 Growth Rates section")
                     raise Exception("未找到 Growth Rates section")
 
                 target_table = growth_section.find('table', {'data-test-id': 'table'})
@@ -971,7 +960,6 @@ class StockScraper:
                     # 驗證表頭結構
                     expected_headers = ['YoY', '3Y', '5Y', '10Y']
                     if not all(h in headers for h in expected_headers):
-                        print(f"表頭結構不符合預期，期望包含: {expected_headers}")
                         raise Exception("表頭結構不正確")
 
                     # 找到 5Y 和 10Y 的位置
@@ -980,15 +968,14 @@ class StockScraper:
                         header_10y_index = headers.index('10Y')
                         print(f"5Y位置: {header_5y_index}, 10Y位置: {header_10y_index}")
                     except ValueError as e:
-                        print(f"找不到5Y或10Y表頭: {e}")
-                        raise Exception("找不到5Y或10Y表頭")
+                        raise Exception(f"找不到5Y或10Y表頭: {e}")
 
                     # 解析表格內容
                     tbody = target_table.find('tbody')
                     if tbody:
                         rows = tbody.find_all('tr')
 
-                        for i, row in enumerate(rows):
+                        for row in rows:
                             row_data = []
 
                             # 處理第一個th（行標題）
@@ -1027,91 +1014,74 @@ class StockScraper:
 
                         return {"error": "未找到Revenue行"}
                     else:
-                        print("未找到tbody")
                         return {"error": "未找到tbody"}
-
                 else:
-                    print("未找到Growth Rates表格")
                     return {"error": "未找到Growth Rates表格"}
 
             except Exception as e:
                 print(f"第 {attempt + 1} 次嘗試失敗: {e}")
                 attempt += 1
                 if attempt < retries:
-                    # 🔥 強化: 失敗後等待更久
                     wait_time = random.uniform(20, 40)
                     print(f"等待 {wait_time:.1f} 秒後重試...")
                     await asyncio.sleep(wait_time)
 
         return {"error": f"Failed to retrieve data for {stock} after {retries} attempts"}
 
-    async def _wait_for_cloudflare_resolution(self, stock, page):
-        """等待 Cloudflare Challenge 被解決（無時間限制）"""
+    async def _wait_for_px_captcha_resolution(self, stock, page):
+        """等待 PerimeterX CAPTCHA 被解決（無限等待）"""
 
-        # 檢查是否有 Cloudflare Challenge
-        page_content = await page.content()
+        check_count = 0
 
-        # 檢查多種 Cloudflare 特徵
-        cloudflare_indicators = [
-            'cloudflare' in page_content.lower(),
-            'challenge' in page_content.lower(),
-            'just a moment' in page_content.lower(),
-            'checking your browser' in page_content.lower(),
-            'ray id' in page_content.lower() and 'cloudflare' in page_content.lower()
-        ]
+        while True:
+            await asyncio.sleep(5)  # 每 5 秒檢查一次
+            check_count += 1
 
-        if any(cloudflare_indicators):
-            print("\n" + "🔴" * 30)
-            print(f"⚠️  {stock} 偵測到 Cloudflare Challenge！")
-            print("⚠️  請在瀏覽器中完成驗證")
-            print("⚠️  驗證通過後將自動繼續...")
-            print("🔴" * 30 + "\n")
+            # 檢查 CAPTCHA 是否還在
+            px_captcha = await page.query_selector('#px-captcha-wrapper, #px-captcha')
 
-            check_count = 0
-            while True:
-                await asyncio.sleep(5)
-                check_count += 1
+            if px_captcha:
+                is_visible = await px_captcha.is_visible()
+                if not is_visible:
+                    # CAPTCHA 元素還在但不可見了
+                    print(f"✅ {stock} PerimeterX 驗證已通過！")
+                    break
+            else:
+                # CAPTCHA 元素完全消失
+                print(f"✅ {stock} PerimeterX 驗證已通過！")
+                break
 
-                # 重新檢查頁面內容
-                try:
-                    current_content = await page.content()
+            # 每 20 秒提示一次
+            if check_count % 4 == 0:
+                elapsed = check_count * 5
+                print(f"   {stock} 等待 PerimeterX 驗證... (已等待 {elapsed} 秒)")
 
-                    # 檢查 Cloudflare 是否還在
-                    still_blocked = any([
-                        'cloudflare' in current_content.lower() and 'challenge' in current_content.lower(),
-                        'just a moment' in current_content.lower(),
-                        'checking your browser' in current_content.lower()
-                    ])
+        # 驗證通過後再等待一下
+        await asyncio.sleep(random.uniform(2, 4))
 
-                    # 🔥 關鍵：檢查是否已經載入目標內容
-                    has_target_content = 'card-container-growth-rates' in current_content
+    async def _wait_for_target_element(self, stock, page):
+        """等待目標元素出現（無限等待）"""
 
-                    if not still_blocked and has_target_content:
-                        print(f"✅ {stock} Cloudflare Challenge 已通過！")
-                        break
-                    elif not still_blocked and not has_target_content:
-                        # Cloudflare 消失了，但目標內容還沒出現
-                        print(f"   {stock} Cloudflare 已通過，等待頁面載入...")
-                        await asyncio.sleep(3)
-                        # 再檢查一次
-                        current_content = await page.content()
-                        if 'card-container-growth-rates' in current_content:
-                            print(f"✅ {stock} 頁面已完全載入！")
-                            break
+        check_count = 0
 
-                    # 每 20 秒提示一次
-                    if check_count % 4 == 0:
-                        print(f"   {stock} 等待 Cloudflare 驗證中... (已等待 {check_count * 5} 秒)")
+        while True:
+            await asyncio.sleep(5)  # 每 5 秒檢查一次
+            check_count += 1
 
-                except Exception as e:
-                    print(f"   檢查 Cloudflare 狀態時發生錯誤: {e}")
-                    # 即使出錯也繼續等待
-                    continue
+            # 檢查目標元素是否出現
+            target = await page.query_selector('section[data-test-id="card-container-growth-rates"]')
 
-            # 通過後額外等待
-            await asyncio.sleep(random.uniform(2, 4))
-        else:
-            print(f"   未偵測到 Cloudflare Challenge（正常）")
+            if target:
+                print(f"✅ {stock} 目標數據已出現！")
+                break
+
+            # 每 20 秒提示一次
+            if check_count % 4 == 0:
+                elapsed = check_count * 5
+                print(f"   {stock} 等待目標數據... (已等待 {elapsed} 秒)")
+
+        # 數據出現後再等待一下
+        await asyncio.sleep(2)
 
     async def run_seekingalpha(self):
         """執行 SeekingAlpha 數據抓取 - 強制有頭模式處理 Cloudflare"""
@@ -1125,110 +1095,15 @@ class StockScraper:
         try:
             await self.setup_browser()
 
-            # 🔥 強化: 創建更真實的瀏覽器 context
             context = await self.browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
                 viewport={"width": 1920, "height": 1080},
                 java_script_enabled=True,
-                locale='en-US',
-                timezone_id='America/New_York',
-                extra_http_headers={
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    'Accept-Encoding': 'gzip, deflate, br',
-                    'DNT': '1',
-                    'Connection': 'keep-alive',
-                    'Upgrade-Insecure-Requests': '1',
-                    'Sec-Fetch-Dest': 'document',
-                    'Sec-Fetch-Mode': 'navigate',
-                    'Sec-Fetch-Site': 'none',
-                    'Sec-Fetch-User': '?1',
-                    'Cache-Control': 'max-age=0',
-                    'Referer': 'https://www.google.com/'
-                },
-                permissions=['geolocation'],
-                geolocation={'latitude': 40.7128, 'longitude': -74.0060},
             )
-
-            # 🔥 強化反偵測腳本
-            await context.add_init_script("""
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined
-                });
-
-                window.chrome = {
-                    runtime: {},
-                    loadTimes: function() {},
-                    csi: function() {},
-                    app: {},
-                    webstore: {}
-                };
-
-                const originalQuery = window.navigator.permissions.query;
-                window.navigator.permissions.query = (parameters) => (
-                    parameters.name === 'notifications' ?
-                        Promise.resolve({ state: Notification.permission }) :
-                        originalQuery(parameters)
-                );
-
-                Object.defineProperty(navigator, 'plugins', {
-                    get: () => [
-                        {name: 'Chrome PDF Plugin', description: 'Portable Document Format', filename: 'internal-pdf-viewer'},
-                        {name: 'Chrome PDF Viewer', description: '', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai'},
-                        {name: 'Native Client', description: '', filename: 'internal-nacl-plugin'}
-                    ]
-                });
-
-                Object.defineProperty(navigator, 'languages', {
-                    get: () => ['en-US', 'en']
-                });
-
-                Object.defineProperty(navigator, 'platform', {
-                    get: () => 'Win32'
-                });
-
-                Object.defineProperty(navigator, 'hardwareConcurrency', {
-                    get: () => 8
-                });
-
-                Object.defineProperty(navigator, 'deviceMemory', {
-                    get: () => 8
-                });
-
-                const getParameter = WebGLRenderingContext.prototype.getParameter;
-                WebGLRenderingContext.prototype.getParameter = function(parameter) {
-                    if (parameter === 37445) {
-                        return 'Intel Inc.';
-                    }
-                    if (parameter === 37446) {
-                        return 'Intel Iris OpenGL Engine';
-                    }
-                    return getParameter.call(this, parameter);
-                };
-
-                const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
-                HTMLCanvasElement.prototype.toDataURL = function(type) {
-                    if (type === 'image/png' && this.width === 280) {
-                        return originalToDataURL.apply(this, ['image/jpeg', 0.92]);
-                    }
-                    return originalToDataURL.apply(this, arguments);
-                };
-            """)
 
             try:
                 page = await context.new_page()
                 result = []
-
-                # 🔥 新增: 先訪問首頁建立 Session
-                print("🌐 建立 Session...")
-                await page.goto('https://seekingalpha.com/', wait_until='domcontentloaded', timeout=30000)
-                await asyncio.sleep(random.uniform(3, 6))
-
-                # 模擬真實瀏覽行為
-                await page.evaluate('window.scrollTo(0, 300)')
-                await asyncio.sleep(random.uniform(1, 2))
-                await page.evaluate('window.scrollTo(0, 0)')
-                await asyncio.sleep(random.uniform(1, 2))
 
                 # 依序處理每個股票
                 for i, stock in enumerate(self.stocks):
@@ -2499,19 +2374,22 @@ class StockScraper:
 
     async def get_earnings_date_earningshub(self, stock, page, retries=3):
         """
-        從 earningshub.com 爬取財報日期
+        從 earningshub.com 爬取財報日期 - 改進版
 
-        正確結構：
-        <div class="MuiStack-root css-3a3hw0">
-            <p>Q1 2026 Earnings in 66 Days</p>
-            <span class="MuiTypography-caption css-c3laax">2026年3月20日 週五 下午9:00</span>
-        </div>
+        策略：
+        1. 找到所有包含 "Earnings" 的區塊
+        2. 提取所有日期
+        3. 過濾出未來日期
+        4. 選擇最近的一個
 
         Returns:
-            dict: {'earnings_date': '2026年3月20日 週五 下午9:00', 'status': 'ESTIMATE'}
+            dict: {'earnings_date': '2026年2月19日 週四 上午5:00', 'status': 'ESTIMATE'}
+            None: 找不到未來財報
         """
         from bs4 import BeautifulSoup
         import random
+        from datetime import datetime
+        import re
 
         # 股票代碼轉換
         original_stock = stock
@@ -2539,7 +2417,7 @@ class StockScraper:
 
                 # 等待關鍵元素載入
                 try:
-                    await page.wait_for_selector('div.MuiStack-root', timeout=10000)
+                    await page.wait_for_selector('div.MuiAlert-root', timeout=10000)
                     await asyncio.sleep(2)
                 except Exception:
                     print(f"   等待元素超時，繼續嘗試解析...")
@@ -2548,166 +2426,184 @@ class StockScraper:
                 content = await page.content()
                 soup = BeautifulSoup(content, 'html.parser')
 
-                # 🔥 方法 1: 尋找包含正確格式的財報容器
-                stack_containers = soup.find_all('div', class_='MuiStack-root')
+                # ===== 步驟 1: 找到所有 MuiAlert 區塊 =====
+                all_alerts = soup.find_all('div', class_='MuiAlert-root')
+                print(f"   找到 {len(all_alerts)} 個 Alert 區塊")
 
-                for container in stack_containers:
-                    container_text = container.get_text()
+                all_earnings_data = []  # 儲存所有找到的財報資訊
 
-                    # 🔥 關鍵驗證：
-                    # 1. 必須包含 "Earnings in" 和 "Days"
-                    # 2. 必須包含季度標記 (Q1, Q2, Q3, Q4)
-                    # 3. 不能包含 "quarters"（這是歷史數據）
-                    has_earnings = 'Earnings in' in container_text and 'Days' in container_text
-                    has_quarter = any(q in container_text for q in ['Q1 ', 'Q2 ', 'Q3 ', 'Q4 '])
-                    is_historical = 'quarters' in container_text.lower()
+                # ===== 步驟 2: 遍歷所有區塊，提取日期 =====
+                for alert_index, alert in enumerate(all_alerts, 1):
+                    alert_text = alert.get_text()
 
-                    if has_earnings and has_quarter and not is_historical:
-                        print(f"   ✓ 找到財報容器: {container_text[:50]}...")
+                    # 🔥 關鍵過濾：必須包含 "Earnings" 和季度標記
+                    if 'Earnings' not in alert_text:
+                        continue
 
-                        # 在這個容器內尋找日期 span
-                        date_span = container.find('span', class_='MuiTypography-caption')
+                    has_quarter = any(q in alert_text for q in ['Q1 ', 'Q2 ', 'Q3 ', 'Q4 '])
+                    if not has_quarter:
+                        continue
 
-                        if date_span:
-                            # 檢查是否有 ESTIMATE/CONFIRMED 標籤
-                            inner_box = date_span.find('span', class_='MuiBox-root')
+                    print(f"   Alert {alert_index}: 找到 Earnings 區塊")
 
-                            if inner_box:
-                                # 有標籤（例如 ESTIMATE）
-                                status_text = inner_box.get_text(strip=True)
-                                date_text = date_span.get_text(strip=True).replace(status_text, '').strip()
+                    # 尋找日期 span
+                    date_span = alert.find('span', class_='MuiTypography-caption')
 
-                                print(f"✓ 找到 {original_stock} 的財報日期: {date_text} ({status_text})")
+                    if not date_span:
+                        print(f"      ⚠️ 未找到日期 span")
+                        continue
 
-                                return {
-                                    'earnings_date': date_text,
-                                    'status': status_text,
-                                    'source': 'earningshub'
-                                }
-                            else:
-                                # 沒有標籤（已確認日期）
-                                date_text = date_span.get_text(strip=True)
+                    # 提取日期文字
+                    date_text = date_span.get_text(strip=True)
 
-                                # 驗證是否為有效日期
-                                if '年' in date_text and '月' in date_text and '日' in date_text:
-                                    print(f"✓ 找到 {original_stock} 的財報日期: {date_text} (CONFIRMED)")
+                    # 移除標籤（ESTIMATE / CONFIRMED）
+                    status = None
+                    inner_box = date_span.find('span', class_='MuiBox-root')
+                    if inner_box:
+                        status = inner_box.get_text(strip=True)
+                        date_text = date_text.replace(status, '').strip()
 
-                                    return {
-                                        'earnings_date': date_text,
-                                        'status': 'CONFIRMED',
-                                        'source': 'earningshub'
-                                    }
+                    # 驗證日期格式（必須包含「年月日」）
+                    if '年' not in date_text or '月' not in date_text or '日' not in date_text:
+                        print(f"      ⚠️ 日期格式不正確: {date_text}")
+                        continue
 
-                # 🔥 方法 2: 備用方案 - 尋找 css-3a3hw0 類別
-                backup_container = soup.find('div', class_='css-3a3hw0')
+                    print(f"      ✓ 原始日期: {date_text}")
+                    if status:
+                        print(f"      ✓ 狀態: {status}")
 
-                if backup_container:
-                    container_text = backup_container.get_text()
+                    # 解析日期
+                    try:
+                        parsed_date = self._parse_chinese_date(date_text)
+                        print(f"      ✓ 解析後: {parsed_date}")
 
-                    # 同樣的驗證邏輯
-                    has_earnings = 'Earnings in' in container_text and 'Days' in container_text
-                    has_quarter = any(q in container_text for q in ['Q1 ', 'Q2 ', 'Q3 ', 'Q4 '])
-                    is_historical = 'quarters' in container_text.lower()
+                        # 儲存資訊
+                        all_earnings_data.append({
+                            'date': parsed_date,
+                            'date_text': date_text,
+                            'status': status or 'CONFIRMED',
+                            'alert_type': self._get_alert_color(alert),
+                            'raw_text': alert_text[:100]  # 前 100 字符供調試
+                        })
 
-                    if has_earnings and has_quarter and not is_historical:
-                        print(f"   ✓ 使用備用容器 (css-3a3hw0)")
+                    except Exception as parse_error:
+                        print(f"      ❌ 日期解析失敗: {parse_error}")
+                        continue
 
-                        date_span = backup_container.find('span', class_='MuiTypography-caption')
+                # ===== 步驟 3: 過濾未來日期 =====
+                if not all_earnings_data:
+                    print(f"   ⚠️ 未找到任何有效的財報日期")
+                    attempt += 1
+                    if attempt >= retries:
+                        return None
+                    continue
 
-                        if date_span:
-                            inner_box = date_span.find('span', class_='MuiBox-root')
+                print(f"\n   📊 找到 {len(all_earnings_data)} 個財報日期：")
+                for i, data in enumerate(all_earnings_data, 1):
+                    print(f"      {i}. {data['date_text']} ({data['status']})")
 
-                            if inner_box:
-                                status_text = inner_box.get_text(strip=True)
-                                date_text = date_span.get_text(strip=True).replace(status_text, '').strip()
+                # 取得當前時間（台北時區）
+                from datetime import timezone, timedelta
+                taipei_tz = timezone(timedelta(hours=8))
+                now = datetime.now(taipei_tz)
 
-                                print(f"✓ 找到 {original_stock} 的財報日期: {date_text} ({status_text})")
+                # 過濾未來日期
+                future_dates = [
+                    d for d in all_earnings_data
+                    if d['date'] > now
+                ]
 
-                                return {
-                                    'earnings_date': date_text,
-                                    'status': status_text,
-                                    'source': 'earningshub'
-                                }
-                            else:
-                                date_text = date_span.get_text(strip=True)
+                print(f"\n   🔮 未來財報: {len(future_dates)} 個")
 
-                                if '年' in date_text and '月' in date_text and '日' in date_text:
-                                    print(f"✓ 找到 {original_stock} 的財報日期: {date_text} (CONFIRMED)")
-
-                                    return {
-                                        'earnings_date': date_text,
-                                        'status': 'CONFIRMED',
-                                        'source': 'earningshub'
-                                    }
-
-                # 🔥 方法 3: 最終備用方案
-                all_date_candidates = soup.find_all('span', class_='MuiTypography-caption css-c3laax')
-
-                for candidate in all_date_candidates:
-                    # 檢查父元素
-                    parent = candidate.find_parent('div', class_='MuiStack-root')
-
-                    if parent:
-                        parent_text = parent.get_text()
-
-                        # 同樣的驗證
-                        has_earnings = 'Earnings in' in parent_text and 'Days' in parent_text
-                        has_quarter = any(q in parent_text for q in ['Q1 ', 'Q2 ', 'Q3 ', 'Q4 '])
-                        is_historical = 'quarters' in parent_text.lower()
-
-                        if has_earnings and has_quarter and not is_historical:
-                            inner_box = candidate.find('span', class_='MuiBox-root')
-
-                            if inner_box:
-                                status_text = inner_box.get_text(strip=True)
-                                date_text = candidate.get_text(strip=True).replace(status_text, '').strip()
-
-                                print(f"✓ 找到 {original_stock} 的財報日期: {date_text} ({status_text})")
-
-                                return {
-                                    'earnings_date': date_text,
-                                    'status': status_text,
-                                    'source': 'earningshub'
-                                }
-                            else:
-                                date_text = candidate.get_text(strip=True)
-
-                                if '年' in date_text and '月' in date_text and '日' in date_text:
-                                    print(f"✓ 找到 {original_stock} 的財報日期: {date_text} (CONFIRMED)")
-
-                                    return {
-                                        'earnings_date': date_text,
-                                        'status': 'CONFIRMED',
-                                        'source': 'earningshub'
-                                    }
-
-                # 如果所有方法都失敗
-                print(f"⚠️ 未找到 {original_stock} 的財報日期元素")
-                attempt += 1
-
-                if attempt >= retries:
-                    print(f"❌ {original_stock} 在 {retries} 次嘗試後仍無法獲取財報日期")
+                if not future_dates:
+                    print(f"   ⚠️ 沒有找到未來的財報日期")
                     return None
 
-                # 等待後重試
+                # ===== 步驟 4: 選擇最近的未來日期 =====
+                next_earnings = min(future_dates, key=lambda x: x['date'])
+
+                print(f"\n   ✅ 最近的未來財報:")
+                print(f"      日期: {next_earnings['date_text']}")
+                print(f"      狀態: {next_earnings['status']}")
+                print(f"      距今: {(next_earnings['date'] - now).days} 天")
+
+                return {
+                    'earnings_date': next_earnings['date_text'],
+                    'status': next_earnings['status'],
+                    'source': 'earningshub'
+                }
+
+            except Exception as e:
+                attempt += 1
+                print(f"   ❌ 第 {attempt} 次嘗試失敗: {e}")
+
+                if attempt >= retries:
+                    print(f"   ❌ {original_stock} 在 {retries} 次嘗試後仍無法獲取財報日期")
+                    return None
+
                 wait_time = random.uniform(5, 10)
                 print(f"   等待 {wait_time:.1f} 秒後重試...")
                 await asyncio.sleep(wait_time)
 
-            except Exception as e:
-                attempt += 1
-                print(f"第 {attempt} 次嘗試失敗: {e}")
-
-                if attempt >= retries:
-                    print(f"❌ Failed to retrieve earnings date for {original_stock} after {retries} attempts")
-                    return None
-
-                wait_time = random.uniform(5, 10)
-                print(f"等待 {wait_time:.1f} 秒後重試...")
-                await asyncio.sleep(wait_time)
-
-        print(f"❌ {original_stock} 無法獲取財報日期")
         return None
+
+    def _parse_chinese_date(self, date_str):
+        """
+        解析中文日期格式
+
+        範例：
+        - "2026年2月19日 週四 上午5:00"
+        - "2026年2月19日 週四 下午9:00"
+
+        Returns:
+            datetime: 帶時區的 datetime 物件（台北時區）
+        """
+        from datetime import datetime, timezone, timedelta
+        import re
+
+        # 正則表達式：2026年2月19日 週四 上午5:00
+        pattern = r'(\d{4})年(\d{1,2})月(\d{1,2})日.*?(上午|下午)(\d{1,2}):(\d{2})'
+        match = re.search(pattern, date_str)
+
+        if not match:
+            raise ValueError(f"無法解析日期格式: {date_str}")
+
+        year = int(match.group(1))
+        month = int(match.group(2))
+        day = int(match.group(3))
+        am_pm = match.group(4)
+        hour = int(match.group(5))
+        minute = int(match.group(6))
+
+        # 轉換為 24 小時制
+        if am_pm == '下午' and hour != 12:
+            hour += 12
+        elif am_pm == '上午' and hour == 12:
+            hour = 0
+
+        # 建立帶時區的 datetime（台北時區 UTC+8）
+        taipei_tz = timezone(timedelta(hours=8))
+        dt = datetime(year, month, day, hour, minute, tzinfo=taipei_tz)
+
+        return dt
+
+    def _get_alert_color(self, alert):
+        """
+        判斷 Alert 的顏色類型
+
+        Returns:
+            str: 'info' (藍色), 'warning' (黃色), 'error' (紅色)
+        """
+        class_str = alert.get('class', [])
+
+        if 'MuiAlert-colorInfo' in class_str:
+            return 'info'
+        elif 'MuiAlert-colorWarning' in class_str:
+            return 'warning'
+        elif 'MuiAlert-colorError' in class_str:
+            return 'error'
+        else:
+            return 'unknown'
 
     async def run_earnings_dates(self):
         """批次執行財報日期抓取"""
